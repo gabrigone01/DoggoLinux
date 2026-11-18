@@ -102,7 +102,7 @@ float sdEar(vec3 q, int i) {
 
 vec3 toHead(vec3 p) { return transpose(uHeadRot) * (p - uHeadPos); }
 // occhioni tondi, più davanti che di lato: visti di fronte non sembrano distanti
-vec3 eyeC(float sg) { return vec3(0.56 * uHeadR, 0.16 * uHeadR, sg * 0.4 * uHeadR); }
+vec3 eyeC(float sg) { return vec3(0.64 * uHeadR, 0.12 * uHeadR, sg * 0.29 * uHeadR); }
 
 vec2 mapDog(vec3 pw) {
     vec3 p = transpose(uBodyRot) * (pw - uRoot);
@@ -152,7 +152,7 @@ vec2 mapDog(vec3 pw) {
     float M = uMuzzle;
     float head = sdEllipsoid(q - vec3(-0.15 * R, 0.12 * R, 0.0), vec3(0.95 * R, 0.74 * R, 0.82 * R));
     vec3 bq = vec3(q.x, q.y, abs(q.z));
-    head = smin(head, sdEllipsoid(bq - vec3(0.4 * R, 0.3 * R, 0.34 * R), vec3(0.28, 0.17, 0.24) * R), 0.22 * R);
+    head = smin(head, sdEllipsoid(bq - vec3(0.36 * R, 0.3 * R, 0.3 * R), vec3(0.24, 0.12, 0.2) * R), 0.3 * R);
     head = smin(head, sdEllipsoid(q - vec3(0.02 * R, -0.24 * R, 0.0), vec3(0.6 * R, 0.46 * R, 0.74 * R)), 0.3 * R);
     vec3 mq = vec3(q.x, q.y, q.z * 1.08);
     head = smin(head, sdRoundCone(mq, vec3(0.5 * R, -0.22 * R, 0.0), vec3(0.5 * R + M, -0.2 * R, 0.0), 0.42 * R, 0.25 * R), 0.38 * R);
@@ -179,7 +179,7 @@ vec2 mapDog(vec3 pw) {
     for (int s = 0; s < 2; s++) {
         float sg = s == 0 ? 1.0 : -1.0;
         vec3 ec = eyeC(sg) * vec3(1.0, 1.0, mix(0.93, 1.0, uEyeOpen));
-        res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.2, 0.21 * mix(0.25, 1.0, uEyeOpen), 0.22) * R), 6.0));
+        res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.22, 0.25 * mix(0.25, 1.0, uEyeOpen), 0.25) * R), 6.0));
     }
     if (uJaw > 0.03) {
         vec3 mc = vec3(0.35 * R + uMuzzle * 0.45, -0.45 * R - uJaw * 0.12 * R, 0.0);
@@ -321,8 +321,8 @@ vec3 dogAlbedo(vec3 pw, float m) {
     if (m == 6.0) {  // occhio: pupilla, iride marrone calda, bordo scuro
         vec3 ec = eyeC(sign(q.z));
         float c = dot(normalize(q - ec), normalize(vec3(0.85, 0.05, sign(q.z) * 0.5)));
-        vec3 iris = mix(vec3(0.3, 0.16, 0.07), vec3(0.52, 0.31, 0.13), smoothstep(0.45, 0.8, c));
-        return lin(c > 0.86 ? vec3(0.02) : c > 0.4 ? iris : vec3(0.08, 0.05, 0.04));  // pupilla e iride grandi
+        vec3 iris = mix(vec3(0.16, 0.09, 0.05), vec3(0.34, 0.2, 0.09), smoothstep(0.4, 0.75, c));
+        return lin(c > 0.8 ? vec3(0.02) : c > 0.35 ? iris : vec3(0.06, 0.04, 0.03));  // pupilla e iride grandi
     }
     if (m == 7.0) return lin(mix(vec3(0.07, 0.05, 0.05), vec3(0.5, 0.17, 0.2), smoothstep(0.24 * R, 0.08 * R, abs(q.z))));
     if (m == 8.0) return lin(vec3(0.93, 0.5, 0.55));
@@ -454,7 +454,7 @@ void main() {
     if ((m >= 5.0 && m <= 8.0) || m == 15.0 || m == 17.0) {
         float spec = pow(clamp(dot(reflect(-L, n), -rd), 0.0, 1.0), m == 6.0 ? 70.0 : 25.0);
         col += vec3(1.0) * spec * (m == 6.0 ? 1.4 : 0.35) * sh;
-        if (m == 6.0) col += vec3(1.0) * smoothstep(0.93, 0.965, dot(n, normalize(vec3(-0.3, 0.55, 1.0))));  // riflesso vivo negli occhi
+        if (m == 6.0) col += vec3(1.0) * smoothstep(0.975, 0.99, dot(n, normalize(vec3(-0.3, 0.55, 1.0)))) * 0.8;  // riflesso vivo negli occhi
     }
     col *= mix(0.75, 1.0, ao);
     col = clamp(pow(col, vec3(1.0 / 2.2)), 0.0, 1.0);  // >1 romperebbe l'alpha premoltiplicato
