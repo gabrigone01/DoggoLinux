@@ -463,7 +463,7 @@ class Brain:
         a = self.activity
         self.timer -= dt
         # di base è un cane contento: bocca appena socchiusa, coda su che scodinzola piano
-        T.update(tailUp=0.35, wagAmp=0.28, wagFreq=3.5, jaw=0.1, tongue=0.0, ears=0.15)
+        T.update(tailUp=0.35, wagAmp=0.28, wagFreq=3.5, jaw=0.0, tongue=0.0, ears=0.15)
         if a in ("fetch", "play", "eat", "drink", "zoom"):
             self.games(dt, T)
             a = self.activity

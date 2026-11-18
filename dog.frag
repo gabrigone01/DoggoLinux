@@ -175,7 +175,7 @@ vec2 mapDog(vec3 pw) {
     vec2 res = vec2(fur, part);
 
     vec3 nc = vec3(0.6 * R + uMuzzle, -0.08 * R, 0.0);
-    res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.17 * R, 0.14 * R, 0.21 * R)), 5.0));
+    res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.18 * R, 0.15 * R, 0.19 * R)), 5.0));
     for (int s = 0; s < 2; s++) {
         float sg = s == 0 ? 1.0 : -1.0;
         vec3 ec = eyeC(sg) * vec3(1.0, 1.0, mix(0.93, 1.0, uEyeOpen));
@@ -321,8 +321,13 @@ vec3 dogAlbedo(vec3 pw, float m) {
     if (m == 6.0) {  // occhio: pupilla, iride marrone calda, bordo scuro
         vec3 ec = eyeC(sign(q.z));
         float c = dot(normalize(q - ec), normalize(vec3(0.85, 0.05, sign(q.z) * 0.5)));
-        vec3 iris = mix(vec3(0.16, 0.09, 0.05), vec3(0.34, 0.2, 0.09), smoothstep(0.4, 0.75, c));
-        return lin(c > 0.8 ? vec3(0.02) : c > 0.35 ? iris : vec3(0.06, 0.04, 0.03));  // pupilla e iride grandi
+        // occhio a bottone: quasi nero, con un calore marrone solo in basso
+        float low = smoothstep(0.0, -0.5, normalize(q - ec).y);
+        vec3 iris = mix(vec3(0.05, 0.03, 0.02), vec3(0.3, 0.17, 0.08), low * smoothstep(0.35, 0.7, c));
+        // riflesso fisso in alto verso l'esterno, uguale nei due occhi: lo sguardo sembra vivo
+        float glint = dot(normalize(q - ec), normalize(vec3(0.7, 0.55, sign(q.z) * 0.45)));
+        if (glint > 0.95) return vec3(0.95);
+        return lin(c > 0.8 ? vec3(0.02) : c > 0.35 ? iris : vec3(0.04, 0.03, 0.02));
     }
     if (m == 7.0) return lin(mix(vec3(0.07, 0.05, 0.05), vec3(0.5, 0.17, 0.2), smoothstep(0.24 * R, 0.08 * R, abs(q.z))));
     if (m == 8.0) return lin(vec3(0.93, 0.5, 0.55));
@@ -378,6 +383,10 @@ vec3 dogAlbedo(vec3 pw, float m) {
         c *= 1.0 - 0.35 * toes * smoothstep(uLegR.y * 1.4, uLegR.y * 0.4, p.y);
     }
     if (m == 9.0) c = uPattern == 1 ? coat : mix(coat, coat2, 0.75);
+    if (m == 4.0) {  // guance appena rosate sotto gli occhi
+        vec3 ch = q - vec3(0.62 * R, -0.12 * R, sign(q.z) * 0.42 * R);
+        c = mix(c, vec3(0.85, 0.42, 0.42), 0.35 * smoothstep(0.2 * R, 0.05 * R, length(ch)));
+    }
     if (uPattern == 0) {  // maremmano: avorio, sfumature biscotto attorno alle orecchie e nelle ciocche
         if (m == 4.0) c = mix(c, coat2, 0.45 * smoothstep(0.1 * R, -0.5 * R, q.x) * smoothstep(-0.1 * R, 0.4 * R, q.y));
         c = mix(c, coat2, 0.35 * (1.0 - n));

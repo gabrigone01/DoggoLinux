@@ -64,10 +64,10 @@ DEFAULT_BREED = "maremmano"
 GAITS = (((0.25, 0.75, 0.0, 0.5), 0.62),   # passo
          ((0.0, 0.5, 0.5, 0.0), 0.44),     # trotto: diagonali insieme
          ((0.58, 0.48, 0.0, 0.1), 0.3))    # galoppo: posteriori, poi anteriori, poi in volo
-SCALE = 1.25  # grandezza del cane sullo schermo
+SCALE = 1.6  # grandezza del cane sullo schermo: abbastanza pixel perché la faccia si legga
 SIZED = {"Hs", "rc", "rh", "Lb", "R", "muzzle", "neck", "neckR", "tail", "tailR", "tailFur", "legR", "fur", "kscale"}
 # proporzioni da cucciolone, uguali per tutte le razze: testa più grande, muso corto, zampe e schiena più corte
-CUTE = dict(R=1.25, muzzle=0.75, Hs=0.88, Lb=0.9)
+CUTE = dict(R=1.4, muzzle=0.6, Hs=0.8, Lb=0.85, mane=0.6)
 
 
 # ------------------------------------------------------------------ vettori (tuple x, y, z)
