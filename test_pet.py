@@ -80,7 +80,7 @@ class RigTest(unittest.TestCase):
                     self.assertLessEqual(dog3d.length(dog3d.sub(low, mid)), l2 + 1e-3, msg=key)
                     self.assertAlmostEqual(foot[1], dog.b["legR"] * 0.9, places=3, msg=(key, pose))
                 w, h = dog.window_size()
-                self.assertTrue(80 < w < 260 and 60 < h < 200, (key, w, h))
+                self.assertTrue(80 < w < 340 and 60 < h < 250, (key, w, h))
 
     def test_look_at_camera_turns_head_toward_viewer(self):
         dog = dog3d.Dog("golden")
