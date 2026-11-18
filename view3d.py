@@ -142,7 +142,8 @@ class SceneView(QOpenGLWidget):
         if self.prog is None or (self.scene == 0 and self.rig is None) or (self.scene == 1 and self.breed is None):
             return
         self.prog.bind()
-        set_common(self.prog, self.width(), self.height(), self.scene)
+        dpr = self.devicePixelRatioF()  # Retina / scala di Windows: lo shader conta pixel fisici
+        set_common(self.prog, self.width() * dpr, self.height() * dpr, self.scene, dpr)
         if self.scene == 0:
             set_dog_uniforms(self.prog, self.dog, self.rig)
         else:

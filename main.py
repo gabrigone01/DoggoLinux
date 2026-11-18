@@ -13,26 +13,39 @@ from pathlib import Path
 if os.environ.get("XDG_SESSION_TYPE") == "wayland":
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
-from PyQt6.QtCore import QElapsedTimer, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtDBus import QDBusConnection
+from PyQt6.QtCore import QDir, QElapsedTimer, QLockFile, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (QActionGroup, QColor, QCursor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPolygon,
                          QRadialGradient, QRegion, QSurfaceFormat)
 from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QPushButton,
                              QVBoxLayout, QWidget)
 
 import dog3d
-import kwin_bridge
 import view3d
 from ai_handler import ChatError, GeminiChat, parse_reply, system_prompt
 from brain import Areas, Brain
 
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-CONFIG_PATH = CONFIG_DIR / "doggo" / "config.json"  # nella home: funziona anche installato in /usr/share
+if sys.platform == "win32":
+    CONFIG_PATH = Path(os.environ.get("APPDATA") or Path.home()) / "Doggo" / "config.json"
+elif sys.platform == "darwin":
+    CONFIG_PATH = Path.home() / "Library" / "Application Support" / "Doggo" / "config.json"
+else:  # nella home: funziona anche installato in /usr/share
+    CONFIG_PATH = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "doggo" / "config.json"
 OLD_CONFIG = Path(__file__).with_name("config.json")  # versioni precedenti: accanto al programma
-AUTOSTART = CONFIG_DIR / "autostart" / "doggo.desktop"
+if sys.platform == "darwin":
+    AUTOSTART = Path.home() / "Library" / "LaunchAgents" / "com.github.gabrigone01.doggo.plist"
+else:
+    AUTOSTART = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "autostart" / "doggo.desktop"
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"  # avvio automatico su Windows
 DEFAULTS = {"breed": dog3d.DEFAULT_BREED, "name": "", "kennel": "right", "windows": True, "api_key": "",
             "model": "gemini-flash-latest"}
 FLAGS = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
+
+
+def keep_visible(w):
+    """Su macOS le finestre "strumento" spariscono quando si passa a un'altra app: le teniamo visibili."""
+    if sys.platform == "darwin":
+        w.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
+    return w
 
 
 def load_config(path=CONFIG_PATH):
@@ -55,17 +68,56 @@ def save_config(cfg, path=CONFIG_PATH):
     os.replace(tmp, path)
 
 
+def launch_command():
+    """Come rilanciare il cane: l'eseguibile impacchettato oppure python + main.py."""
+    if getattr(sys, "frozen", False):  # Doggo.exe / Doggo.app
+        return [sys.executable]
+    exe = sys.executable
+    if sys.platform == "win32" and exe.lower().endswith("python.exe"):
+        exe = exe[:-len("python.exe")] + "pythonw.exe"  # senza finestra del terminale
+    return [exe, str(Path(__file__).resolve())]
+
+
+def autostart_enabled():
+    if sys.platform == "win32":
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+                winreg.QueryValueEx(key, "Doggo")
+            return True
+        except OSError:
+            return False
+    return AUTOSTART.exists()
+
+
 def set_autostart(on):
-    """Avvio automatico al login: un lanciatore in ~/.config/autostart (standard XDG, vale per KDE e GNOME)."""
+    """Avvio automatico al login: Run del registro (Windows), LaunchAgent (macOS), ~/.config/autostart (Linux)."""
+    cmd = launch_command()
+    if sys.platform == "win32":
+        import subprocess
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if on:
+                winreg.SetValueEx(key, "Doggo", 0, winreg.REG_SZ, subprocess.list2cmdline(cmd))
+            else:
+                try:
+                    winreg.DeleteValue(key, "Doggo")
+                except FileNotFoundError:
+                    pass
+        return
     if not on:
         AUTOSTART.unlink(missing_ok=True)
         return
     AUTOSTART.parent.mkdir(parents=True, exist_ok=True)
-    main_py = Path(__file__).resolve()
+    if sys.platform == "darwin":
+        import plistlib
+        AUTOSTART.write_bytes(plistlib.dumps({"Label": "com.github.gabrigone01.doggo",
+                                              "ProgramArguments": cmd, "RunAtLoad": True}))
+        return
     AUTOSTART.write_text(
         "[Desktop Entry]\nType=Application\nName=Doggo\nComment=Il cane da scrivania\n"
-        f"Exec={shlex.quote(sys.executable)} {shlex.quote(str(main_py))}\n"
-        f"Icon={main_py.with_name('icon.png')}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
+        f"Exec={' '.join(shlex.quote(c) for c in cmd)}\n"
+        f"Icon={Path(__file__).resolve().with_name('icon.png')}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
 
 
 class Bubble(QWidget):
@@ -75,6 +127,7 @@ class Bubble(QWidget):
         super().__init__(None, FLAGS)
         self.ctl = ctl
         self.tail_x = 40
+        keep_visible(self)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedWidth(330)
         self.setStyleSheet("""
@@ -134,6 +187,7 @@ class ToyWindow(QWidget):
 
     def __init__(self):
         super().__init__(None, FLAGS | Qt.WindowType.WindowTransparentForInput)
+        keep_visible(self)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.resize(self.W, self.H)
@@ -198,6 +252,7 @@ class PickOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setGeometry(screen.geometry())
         self.setCursor(Qt.CursorShape.CrossCursor)
+        keep_visible(self)
         self.text, self.on_pick, self.on_cancel = text, on_pick, on_cancel
 
     def paintEvent(self, _):
@@ -224,6 +279,7 @@ class DogWindow(view3d.SceneView):
     def __init__(self, ctl, scene):
         super().__init__(scene, FLAGS)
         self.ctl = ctl
+        keep_visible(self)
 
     def mousePressEvent(self, e):
         self.ctl.pressed(self.scene, e.button(), e.globalPosition().toPoint())
@@ -511,7 +567,7 @@ class Pet(QObject):
         menu.addAction("Nome del cane…", self.ask_name)
         auto = menu.addAction("Avvia all'accensione del PC")
         auto.setCheckable(True)
-        auto.setChecked(AUTOSTART.exists())
+        auto.setChecked(autostart_enabled())
         auto.triggered.connect(set_autostart)
         menu.addAction("Chiave API Gemini…", self.ask_api_key)
         menu.addSeparator()
@@ -591,17 +647,21 @@ def main():
     app.setApplicationName("desktop-pet")
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(QIcon(str(Path(__file__).with_name("icon.png"))))
-    if not QDBusConnection.sessionBus().registerService("org.doggo.DesktopPet.Instance"):
-        print("Il cane è già in giro sul desktop.")  # aperto due volte dal menu: un solo cane
+    lock = QLockFile(QDir.temp().filePath("doggo.lock"))
+    if not lock.tryLock(200):
+        print("Il cane è già in giro sul desktop.")  # aperto due volte: un solo cane
         return
     cfg = load_config()
     if not CONFIG_PATH.exists():
         if OLD_CONFIG.exists():  # porta con sé razza, nome e chiave delle versioni precedenti
             cfg = load_config(OLD_CONFIG)
         save_config(cfg)
-    bridge = kwin_bridge.start()
-    if bridge:
-        app.aboutToQuit.connect(kwin_bridge.stop)
+    bridge = None
+    if sys.platform.startswith("linux"):  # cursore e finestre da KWin: solo KDE Plasma su Wayland
+        import kwin_bridge
+        bridge = kwin_bridge.start()
+        if bridge:
+            app.aboutToQuit.connect(kwin_bridge.stop)
     pet = Pet(cfg, bridge)  # noqa: F841 (resta vivo finché gira l'app)
     sys.exit(app.exec())
 

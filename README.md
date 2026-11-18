@@ -1,12 +1,14 @@
 # Doggo 🐕
 
-Un cane in 3D che vive sui tuoi schermi (Ubuntu/Kubuntu): passeggia, si gira, ti guarda, si fa gli affari suoi, gioca con te e con le finestre, dorme nella sua cuccia e chiacchiera con te tramite Google Gemini.
+Un cane in 3D che vive sui tuoi schermi: passeggia, si gira, ti guarda, si fa gli affari suoi, gioca con te, dorme nella sua cuccia e chiacchiera con te tramite Google Gemini. Funziona su **Linux**, **Windows** e **macOS**.
 
-## Installazione (pacchetto .deb)
+Tutti i file si scaricano dalla pagina [Releases](https://github.com/gabrigone01/DoggoLinux/releases/latest). Serve una scheda video con OpenGL 4.1 (va bene qualsiasi GPU integrata recente).
 
-Funziona su Ubuntu, Kubuntu e Debian recenti (Ubuntu 24.04 o successivo), con una scheda video OpenGL 4.1 (va bene qualsiasi GPU integrata recente).
+## Installazione su Linux (Ubuntu, Kubuntu, Debian)
 
-1. **Scarica** l'ultima versione del pacchetto, [doggo_all.deb](https://github.com/gabrigone01/DoggoLinux/releases/latest/download/doggo_all.deb), dalla pagina [Releases](https://github.com/gabrigone01/DoggoLinux/releases/latest), oppure da terminale:
+Ubuntu 24.04 o successivo.
+
+1. **Scarica** [doggo_all.deb](https://github.com/gabrigone01/DoggoLinux/releases/latest/download/doggo_all.deb), oppure da terminale:
 
    ```bash
    wget https://github.com/gabrigone01/DoggoLinux/releases/latest/download/doggo_all.deb
@@ -18,27 +20,44 @@ Funziona su Ubuntu, Kubuntu e Debian recenti (Ubuntu 24.04 o successivo), con un
    sudo apt install ./doggo_all.deb
    ```
 
-3. **Avvia**: menu Applicazioni → Giochi → **Doggo**, oppure scrivi `doggo` nel terminale. Se lo apri due volte resta comunque un solo cane.
+3. **Avvia**: menu Applicazioni → Giochi → **Doggo**, oppure scrivi `doggo` nel terminale.
 
-4. **Avvio automatico all'accensione**: clic destro sul cane → **«Avvia all'accensione del PC»**. Da lì si può anche togliere.
+**Aggiornare**: scarica il nuovo `doggo_all.deb` e ripeti il punto 2.
+**Disinstallare**: `sudo apt remove doggo` (le impostazioni restano in `~/.config/doggo`).
 
-5. **Chat**: clic destro sul cane → «Chiave API Gemini…» e incolla una chiave gratuita presa su <https://aistudio.google.com/apikey>.
+## Installazione su Windows
 
-**Aggiornare**: scarica il nuovo `doggo_all.deb` e ripeti il punto 2. Razza, nome, cuccia e chiave restano.
+Windows 10 o 11.
 
-**Disinstallare**:
+1. **Scarica** [Doggo-windows.exe](https://github.com/gabrigone01/DoggoLinux/releases/latest/download/Doggo-windows.exe) e mettilo dove vuoi (per esempio in `Documenti\Doggo`).
+2. **Avvia** con un doppio clic. Il programma non è firmato digitalmente, quindi al primo avvio Windows SmartScreen può mostrare «Windows ha protetto il PC»: clicca **Ulteriori informazioni → Esegui comunque**.
+3. Il primo avvio richiede qualche secondo (il programma si scompatta).
 
-```bash
-sudo apt remove doggo
-rm -r ~/.config/doggo ~/.config/autostart/doggo.desktop   # facoltativo: impostazioni e avvio automatico
-```
+**Disinstallare**: togli l'avvio automatico dal menu del cane, poi cancella `Doggo-windows.exe` e la cartella `%APPDATA%\Doggo`.
+
+## Installazione su macOS
+
+macOS 12 o successivo, Mac con processore Apple (M1, M2, M3, …).
+
+1. **Scarica** [Doggo-macos.zip](https://github.com/gabrigone01/DoggoLinux/releases/latest/download/Doggo-macos.zip) e aprilo: compare **Doggo.app**.
+2. **Trascina** Doggo.app nella cartella **Applicazioni**.
+3. **Primo avvio**: l'app non è firmata da Apple, quindi fai clic destro (o Ctrl+clic) su Doggo.app → **Apri** → **Apri**. Se macOS la blocca comunque: Impostazioni di Sistema → Privacy e sicurezza → **Apri comunque**.
+
+**Disinstallare**: togli l'avvio automatico dal menu del cane, poi sposta Doggo.app nel Cestino e cancella `~/Library/Application Support/Doggo`.
+
+## Dopo l'installazione (tutti i sistemi)
+
+- **Avvio automatico all'accensione**: clic destro sul cane → **«Avvia all'accensione del PC»**. Da lì si può anche togliere.
+- **Chat**: clic destro sul cane → «Chiave API Gemini…» e incolla una chiave gratuita presa su <https://aistudio.google.com/apikey>.
+- Se apri il programma due volte resta comunque un solo cane.
+- Sedersi sulle finestre e tirarle funziona solo su Linux con KDE Plasma; il resto funziona ovunque.
 
 ## Avvio dal codice sorgente
 
 ```bash
 git clone https://github.com/gabrigone01/DoggoLinux.git
 cd DoggoLinux
-sudo apt install python3-pyqt6 libxcb-cursor0
+sudo apt install python3-pyqt6 libxcb-cursor0   # Linux; su Windows/macOS: pip install PyQt6
 python3 main.py
 ```
 
@@ -46,7 +65,7 @@ Gemini si usa con chiamate REST dirette: non serve installare nessun SDK.
 
 ## Pubblicare una nuova versione
 
-A ogni tag `v…` GitHub Actions costruisce il pacchetto e lo allega alla Release (`.github/workflows/release.yml`):
+A ogni tag `v…` GitHub Actions costruisce `.deb` (Linux), `.exe` (Windows) e `.app` (macOS) e li allega alla Release (`.github/workflows/release.yml`):
 
 ```bash
 git tag v1.0.1
@@ -94,9 +113,9 @@ Se il modello scelto è sovraccarico, lento o ritirato, il cane passa da solo a 
 Crea una chiave gratuita su <https://aistudio.google.com/apikey>, poi:
 
 - esporta `GEMINI_API_KEY=...` (ha la precedenza), **oppure**
-- clic destro sul cane → «Chiave API Gemini…»: viene salvata in `~/.config/doggo/config.json` con permessi `600`.
+- clic destro sul cane → «Chiave API Gemini…»: viene salvata nelle impostazioni (`~/.config/doggo/config.json` su Linux, `%APPDATA%\\Doggo` su Windows, `~/Library/Application Support/Doggo` su macOS).
 
-## Impostazioni (`~/.config/doggo/config.json`)
+## Impostazioni (`config.json`)
 
 ```json
 { "breed": "maremmano", "name": "", "kennel": "right", "windows": true, "api_key": "", "model": "gemini-flash-latest" }
@@ -120,3 +139,5 @@ Crea una chiave gratuita su <https://aistudio.google.com/apikey>, poi:
 
 - Con il ridimensionamento schermo diverso dal 100% le coordinate del cursore di KWin e quelle di XWayland possono non coincidere.
 - Niente suoni: l'abbaiare si vede ma non si sente.
+- Le versioni Windows e macOS non sono firmate digitalmente (vedi gli avvisi al primo avvio).
+- macOS: solo Mac con processore Apple; per i Mac Intel si può avviare dal codice sorgente.

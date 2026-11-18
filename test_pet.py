@@ -4,6 +4,7 @@ import json
 import math
 import os
 import random
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -305,13 +306,50 @@ class AutostartTest(unittest.TestCase):
         import main
         with tempfile.TemporaryDirectory() as d:
             target = Path(d) / "autostart" / "doggo.desktop"
-            with mock.patch.object(main, "AUTOSTART", target):
+            with mock.patch.object(main, "AUTOSTART", target), mock.patch.object(main.sys, "platform", "linux"):
                 main.set_autostart(True)
                 text = target.read_text()
                 self.assertIn("Exec=", text)
                 self.assertIn(str(Path(main.__file__).resolve()), text)
                 main.set_autostart(False)
                 self.assertFalse(target.exists())
+
+
+class PlatformTest(unittest.TestCase):
+    def test_macos_autostart_is_a_launch_agent(self):
+        import plistlib
+        import main
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "LaunchAgents" / "doggo.plist"
+            with mock.patch.object(main, "AUTOSTART", target), mock.patch.object(main.sys, "platform", "darwin"):
+                main.set_autostart(True)
+                plist = plistlib.loads(target.read_bytes())
+                self.assertTrue(plist["RunAtLoad"])
+                self.assertEqual(plist["ProgramArguments"][-1], str(Path(main.__file__).resolve()))
+                self.assertTrue(main.autostart_enabled())
+                main.set_autostart(False)
+                self.assertFalse(target.exists())
+
+    def test_windows_autostart_uses_the_run_key(self):
+        import types
+        import main
+        reg = {}
+        key = mock.MagicMock()
+        key.__enter__ = lambda *a: key
+        key.__exit__ = lambda *a: False
+        fake = types.SimpleNamespace(
+            HKEY_CURRENT_USER=0, KEY_SET_VALUE=2, REG_SZ=1, OpenKey=lambda *a: key,
+            SetValueEx=lambda k, name, _, __, value: reg.__setitem__(name, value),
+            DeleteValue=lambda k, name: reg.pop(name),
+            QueryValueEx=lambda k, name: (reg[name], 1) if name in reg else (_ for _ in ()).throw(OSError()))
+        with mock.patch.dict(sys.modules, {"winreg": fake}), mock.patch.object(main.sys, "platform", "win32"), \
+                mock.patch.object(main.sys, "frozen", True, create=True), \
+                mock.patch.object(main.sys, "executable", r"C:\Program Files\Doggo\Doggo.exe"):
+            main.set_autostart(True)
+            self.assertEqual(reg["Doggo"], '"C:\\Program Files\\Doggo\\Doggo.exe"')
+            self.assertTrue(main.autostart_enabled())
+            main.set_autostart(False)
+            self.assertFalse(main.autostart_enabled())
 
 
 class ShaderTest(unittest.TestCase):
