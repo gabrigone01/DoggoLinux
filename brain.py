@@ -784,8 +784,9 @@ class Brain:
                 if self.phase_t > 1.2:
                     self.phase, self.phase_t = "play", 0.0
             elif ph == "play":
-                if self.phase_t > 0.6:  # la insegue di trotto, cambiando direzione con lei
-                    self.go(lead.x - 30 * lead.face, lead.y + 10, run="trot")
+                if self.phase_t > 0.6:  # la insegue di trotto; cambia meta solo se lei si è spostata davvero
+                    if self.goal is None or math.hypot(self.goal[0] - lead.x, self.goal[1] - lead.y - 10) > 40:
+                        self.go(lead.x, lead.y + 10, run="trot")
                     self.phase_t = 0.0
                 if dist < 80 and self.t > self.next_jump:
                     self.next_jump = self.t + self.rng.uniform(1.2, 2.5)
@@ -875,8 +876,8 @@ class Brain:
                     lead.go(*p, run=True)
                     self.romping = True
             if self.romping and math.hypot(chaser.x - lead.x, chaser.y - lead.y) > 70:
-                side = 1 if chaser.x > lead.x else -1
-                chaser.go(lead.x + side * 55, lead.y, run=True)
+                # lo insegue da dietro, nella direzione in cui corre (scegliere un fianco lo faceva girare di scatto)
+                chaser.go(lead.x - math.cos(lead.dog.yaw) * 55, lead.y - math.sin(lead.dog.yaw) * 30, run=True)
         elif ph == "rest":
             T.update(front=1.0, rear=1.0, jaw=0.5, tongue=0.8, breath=2.0, wagAmp=0.2)
             if self.phase_t > 7:
@@ -1242,8 +1243,12 @@ class Brain:
         yaw, pitch = dog3d.look_angles(self.dog, rig, d)
         T["headYaw"] = max(-1.2, min(1.2, yaw))
         T["headPitch"] = max(-0.7, min(0.6, pitch)) + T["headPitch"] * 0.3
-        if abs(yaw) > 1.2 and self.goal is None and self.activity not in ("spin",):
-            self.dog.yaw_target = self.dog.yaw + (yaw - math.copysign(1.0, yaw))  # gira anche il corpo
+        # gira anche il corpo, ma non più di una volta ogni 1.5 s: con una farfalla che gli gira intorno
+        # si voltava avanti e indietro di continuo
+        if (abs(yaw) > 1.2 and self.goal is None and self.activity not in ("spin",)
+                and self.t - getattr(self, "turned_at", -9.0) > 1.5):
+            self.turned_at = self.t
+            self.dog.yaw_target = self.dog.yaw + (yaw - math.copysign(1.0, yaw))
         if self.gaze == "camera" and self.goal is None and self.activity != "spin":
             # di tre quarti verso di te
             facing_right = math.cos(self.dog.yaw) >= 0
@@ -1326,13 +1331,16 @@ class Brain:
         dx, dy = wx - self.x, wy - self.y
         dist = math.hypot(dx, dy)
         hx, hy = (dx / dist, dy / dist) if dist > 0.5 else (0.0, 0.0)
-        if abs(dy) > abs(dx) * 0.84 and abs(dy) > 25 and not self.crossing:  # quasi in verticale: zig-zag (~35°)
+        far = dist > 150  # il prossimo punto del percorso, non la meta finale: vicino a un passaggio va dritto
+        # quasi in verticale: zig-zag (~35°) solo passeggiando verso una meta lontana; correndo o inseguendo
+        # una meta che si muove il lato si invertirebbe di continuo e si girerebbe di scatto
+        if abs(dy) > abs(dx) * 0.84 and abs(dy) > 25 and not self.crossing and not self.run and far:
             lim = max(30.0, abs(dy) * 0.35)
             if (self.x - wx) * self.zig > lim or not self.fits(self.x + self.zig * 40, self.y):
                 self.zig = -self.zig
             if (self.x - wx) * self.zig <= lim + 1 and self.fits(self.x + self.zig * 40, self.y):
                 hx, hy = self.zig * 0.82, math.copysign(0.57, dy)  # senza spazio da nessun lato va dritto
-        if dist > 0.5:
+        if dist > 6:  # a pochi px la direzione verso la meta è rumore: si girerebbe di scatto avanti e indietro
             self.dog.yaw_target = nearest_angle(self.dog.yaw, math.atan2(hy, hx))  # giù sullo schermo = verso di te
         facing = max(0.0, math.cos(self.dog.yaw - self.dog.yaw_target))
         size = self.dog.b["Hs"] / 30

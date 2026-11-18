@@ -55,6 +55,7 @@ float smin(float a, float b, float k) {
     float h = max(k - abs(a - b), 0.0) / k;
     return min(a, b) - h * h * k * 0.25;
 }
+float smax(float a, float b, float k) { return -smin(-a, -b, k); }  // intersezione con spigoli arrotondati
 float sdEllipsoid(vec3 p, vec3 r) {
     float k0 = length(p / r);
     float k1 = length(p / (r * r));
@@ -100,7 +101,9 @@ float sdEar(vec3 q, int i) {
     return sdEllipsoid(vec3(u - L * 0.5, v, s / taper), vec3(L * 0.5, uEarDim.z, uEarDim.y)) * taper;
 }
 
-const float MOUTH_Y = -0.42, MOUTH_X = 0.06;  // linea della bocca e suo angolo (spazio della testa, in R)
+const float MOUTH_Y = -0.42, MOUTH_X = -0.38;  // l'angolo è dietro l'occhio, verso il collo
+// larghezza del taglio della bocca: quanto il muso davanti, fino alle guance verso l'angolo (si vede di lato)
+float mouthW(float x, float R) { return mix(0.7 * R, 0.4 * R, smoothstep(-0.3 * R, 0.3 * R, x)); }  // linea della bocca e suo angolo (spazio della testa, in R)
 vec3 toHead(vec3 p) { return transpose(uHeadRot) * (p - uHeadPos); }
 // occhi a mandorla rivolti in avanti, verso il muso, come nei cani veri
 vec3 eyeC(float sg) { return vec3(0.63 * uHeadR, 0.2 * uHeadR, sg * 0.38 * uHeadR); }
@@ -160,18 +163,23 @@ vec2 mapDog(vec3 pw) {
     head = smin(head, sdEllipsoid(q - vec3(0.5 * R + M * 0.55, -0.42 * R, 0.0), vec3(M * 0.5, 0.17 * R, 0.36 * R)), 0.12 * R);
     // muso e guance tagliati lungo la linea della bocca, dall'angolo sotto l'occhio fino al naso:
     // sotto c'è solo la mascella, così quando si abbassa la bocca si apre per tutta la lunghezza
-    head = max(head, -max(max(q.y - MOUTH_Y * R, MOUTH_X * R - q.x), abs(q.z) - 0.4 * R));  // solo largo quanto il muso
-    vec3 hinge = vec3(0.0, -0.4 * R, 0.0);
-    float ja = uJaw * 0.7;
+    head = max(head, -smax(smax(q.y - MOUTH_Y * R, MOUTH_X * R - q.x, 0.1 * R), abs(q.z) - mouthW(q.x, R), 0.2 * R));
+    vec3 hinge = vec3(-0.55 * R, -0.39 * R, 0.0);
+    float ja = uJaw * 0.5;  // cerniera più indietro: basta meno angolo per la stessa apertura
     vec3 jq = q - hinge;
     jq = vec3(cos(ja) * jq.x - sin(ja) * jq.y, sin(ja) * jq.x + cos(ja) * jq.y, jq.z) + hinge;
-    float jaw = sdRoundCone(jq, vec3(0.1 * R, -0.56 * R, 0.0), vec3(0.45 * R + M * 0.9, -0.53 * R, 0.0), 0.26 * R, 0.15 * R);
+    float jaw = sdRoundCone(jq, vec3(-0.35 * R, -0.57 * R, 0.0), vec3(0.45 * R + M * 0.9, -0.53 * R, 0.0), 0.28 * R, 0.15 * R);
     // bocca chiusa: mento unito al muso; aperta: separati (k mai zero: smin dividerebbe per zero e la testa sparirebbe)
     head = smin(head, jaw, max(0.16 * R * (1.0 - uJaw * 4.0), 0.01));
     head -= uFur * (0.08 + 0.1 * (furN(q * 0.9) - 0.4));
 
     float fur = smin(smin(core, legs, rh * 0.45), tail, uTailR * 1.2);
     fur = smin(fur, head, R * 0.25);
+    // bocca aperta: il cuneo tra mascella superiore e inferiore si svuota anche nel pelo di collo e criniera,
+    // così l'apertura arriva fino all'angolo della bocca (a bocca chiusa il cuneo è vuoto)
+    float wedge = smax(smax(max(q.y - MOUTH_Y * R, MOUTH_Y * R - jq.y), MOUTH_X * R - q.x, 0.12 * R),
+                       abs(q.z) - mouthW(q.x, R), 0.2 * R);  // spigoli arrotondati: niente bocca "a scatola"
+    fur = max(fur, -wedge);
     float part = 1.0;
     float best = core;
     if (legs < best) { best = legs; part = 2.0; }
@@ -189,7 +197,7 @@ vec2 mapDog(vec3 pw) {
     if (uJaw > 0.03) {  // interno della bocca, lungo quanto il taglio
         float mx0 = MOUTH_X * R, mx1 = 0.45 * R + uMuzzle;
         vec3 mc = vec3((mx0 + mx1) * 0.5, MOUTH_Y * R - uJaw * 0.2 * R, 0.0);
-        res = opU(res, vec2(sdEllipsoid(q - mc, vec3((mx1 - mx0) * 0.5, 0.04 * R + uJaw * 0.24 * R, 0.22 * R)), 7.0));
+        res = opU(res, vec2(sdEllipsoid(q - mc, vec3((mx1 - mx0) * 0.5, 0.04 * R + uJaw * 0.24 * R, 0.3 * R)), 7.0));
     }
     if (uTongue > 0.03) {
         float tl = uMuzzle * (0.55 + 0.5 * uTongue);
@@ -391,7 +399,7 @@ vec3 dogAlbedo(vec3 pw, float m) {
     if (m == 9.0) c = uPattern == 1 ? coat : mix(coat, coat2, 0.75);
     if (m == 4.0) {  // labbra nere lungo la bocca, dall'angolo fino al naso
         float lip = smoothstep(0.07 * R, 0.02 * R, abs(q.y - MOUTH_Y * R)) * smoothstep(MOUTH_X * R, MOUTH_X * R + 0.12 * R, q.x)
-                  * smoothstep(0.42 * R, 0.32 * R, abs(q.z));
+                  * smoothstep(0.02 * R, -0.08 * R, abs(q.z) - mouthW(q.x, R));
         c = mix(c, vec3(0.05, 0.04, 0.04), 0.8 * lip);
     }
     if (uPattern == 0) {  // maremmano: avorio, sfumature biscotto attorno alle orecchie e nelle ciocche

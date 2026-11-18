@@ -241,7 +241,7 @@ class BrainTest(unittest.TestCase):
             if self.brain.goal is None:
                 break
         self.assertIsNone(self.brain.goal)
-        self.assertLess(sorted(slopes)[int(len(slopes) * 0.95)], 1.0)  # quasi sempre in diagonale
+        self.assertLess(sorted(slopes)[int(len(slopes) * 0.8)], 1.0)  # in diagonale; gli ultimi 150 px dritti
 
     WINDOWS = [dict(id="a", x=200, y=1500, w=700, h=500, cls="dolphin"),       # libera
                dict(id="max", x=0, y=1080, w=1920, h=1156, cls="chrome")]     # massimizzata: da non toccare
@@ -325,6 +325,31 @@ class BrainTest(unittest.TestCase):
                 for k, v in self.dog.target.items():
                     self.assertIsInstance(v, (int, float), k)
                     self.assertTrue(math.isfinite(v), k)
+
+    def test_does_not_turn_back_and_forth(self):
+        # prima si girava di scatto avanti e indietro (zig-zag verso mete che si muovono o vicine a un passaggio
+        # tra schermi, direzione verso mete a pochi px): almeno 3 svolte > 1.2 rad in 2 s
+        areas = Areas([(0, 1080, 1920, 1200), (667, 0, 1920, 1080), (1920, 1080, 1920, 1080)])
+        flips = 0
+        for key in ("maremmano", "shiba"):
+            dog = dog3d.Dog(key)
+            brain = Brain(dog, areas, random.Random(0))
+            brain.set_home(3656, 2160, 1)
+            brain.place_home()
+            brain.bowl, brain.water, brain.next_scene = (3700, 2150), (3600, 2150), 5
+            last, turns = dog.yaw_target, []
+            for step in range(15 * 60 * 30):
+                brain.update(1 / 30)
+                t = step / 30
+                if abs(dog.yaw_target - last) > 1.2:
+                    turns.append(t)
+                turns = [x for x in turns if t - x < 2.0]
+                if not turns or abs(dog.yaw_target - last) > 1.2:
+                    last = dog.yaw_target
+                if len(turns) >= 3:
+                    flips += 1
+                    turns = []
+        self.assertLessEqual(flips, 6)
 
     def test_birds_and_cat_get_chased_away(self):
         for kind in ("birds", "cat"):
