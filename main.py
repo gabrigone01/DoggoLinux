@@ -13,11 +13,12 @@ from pathlib import Path
 if os.environ.get("XDG_SESSION_TYPE") == "wayland":
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
-from PyQt6.QtCore import QDir, QElapsedTimer, QLockFile, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import (QDir, QElapsedTimer, QLockFile, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer,
+                          pyqtSignal, qInstallMessageHandler)
 from PyQt6.QtGui import (QActionGroup, QColor, QCursor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPolygon,
                          QRadialGradient, QRegion, QSurfaceFormat)
-from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QPushButton,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
+                             QPushButton, QVBoxLayout, QWidget)
 
 import dog3d
 import sounds
@@ -67,6 +68,18 @@ def save_config(cfg, path=CONFIG_PATH):
     with os.fdopen(fd, "w") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
+
+
+LOG_PATH = CONFIG_PATH.parent / "doggo.log"
+
+
+def setup_log():
+    """Senza console (Doggo.exe, Doggo.app) errori e avvisi di Qt finiscono in doggo.log accanto alla configurazione."""
+    if sys.stderr is not None:
+        return
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    sys.stdout = sys.stderr = open(LOG_PATH, "w", buffering=1, encoding="utf-8")
+    qInstallMessageHandler(lambda _mode, _ctx, msg: print(msg))
 
 
 def launch_command():
@@ -505,6 +518,17 @@ class Pet(QObject):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(33)
+        QTimer.singleShot(4000, self.check_drawing)
+
+    def check_drawing(self):
+        """Se OpenGL o lo shader non partono, cane e cuccia restano invisibili: meglio dirlo."""
+        broken = [v for v in (self.view, self.kennel) if v.prog is None]
+        if not broken:
+            return
+        err = broken[0].error or "OpenGL 4.1 non disponibile (scheda video o driver troppo vecchi?)"
+        print("Disegno non riuscito:", err)
+        QMessageBox.warning(None, "Doggo", f"Non riesco a disegnare il cane.\n\n{err[:1500]}\n\n"
+                            f"Dettagli in: {LOG_PATH}")
 
     # ------------------------------------------------------------ schermi
     @staticmethod
@@ -876,6 +900,7 @@ class Pet(QObject):
 def main():
     for sig in (signal.SIGINT, signal.SIGTERM):  # uscita pulita: rimuove anche lo script KWin
         signal.signal(sig, lambda *_: QApplication.quit())
+    setup_log()
     QSurfaceFormat.setDefaultFormat(view3d.surface_format())
     app = QApplication(sys.argv)
     app.setApplicationName("desktop-pet")

@@ -125,7 +125,15 @@ class SceneView(QOpenGLWidget):
 
     def initializeGL(self):
         try:
-            self.gl = gl_functions(self.context())
+            ctx = self.context()
+            fmt = ctx.format() if ctx else None
+            print("OpenGL:", fmt and f"{fmt.majorVersion()}.{fmt.minorVersion()}")
+            if fmt is None or (fmt.majorVersion(), fmt.minorVersion()) < (4, 1):
+                raise RuntimeError("OpenGL 4.1 non disponibile: il contesto è "
+                                   + (f"{fmt.majorVersion()}.{fmt.minorVersion()}" if fmt else "assente"))
+            self.gl = gl_functions(ctx)
+            if self.gl is None:
+                raise RuntimeError("Funzioni OpenGL 4.1 core non disponibili")
             self.prog = build_program()
         except RuntimeError as e:
             self.error = str(e)
