@@ -31,6 +31,7 @@ jobs:
 
   macos:
     runs-on: macos-15   # Apple Silicon (macos-14 non è più disponibile)
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,7 +43,8 @@ jobs:
         with: {name: macos, path: dist/Doggo-macos.zip}
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # esce anche se la build macOS non parte (a volte GitHub non assegna un Mac e la annulla): basta Linux e Windows
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.linux.result == 'success' && needs.windows.result == 'success'
     needs: [linux, windows, macos]
     runs-on: ubuntu-24.04
     steps:
@@ -50,6 +52,7 @@ jobs:
         with: {merge-multiple: true}
       - uses: softprops/action-gh-release@v2
         with:
+          fail_on_unmatched_files: false
           files: |
             doggo_all.deb
             Doggo-windows.exe
