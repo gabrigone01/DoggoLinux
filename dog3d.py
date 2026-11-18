@@ -50,6 +50,8 @@ BREEDS = {
     ),
 }
 DEFAULT_BREED = "maremmano"
+SCALE = 1.25  # grandezza del cane sullo schermo
+SIZED = {"Hs", "rc", "rh", "Lb", "R", "muzzle", "neck", "neckR", "tail", "tailR", "tailFur", "legR", "fur", "kscale"}
 
 
 # ------------------------------------------------------------------ vettori (tuple x, y, z)
@@ -141,7 +143,8 @@ class Dog:
 
     def set_breed(self, key):
         self.key = key
-        self.b = BREEDS[key]
+        # misure in pixel scalate tutte insieme (colori e rapporti restano uguali)
+        self.b = {k: v * SCALE if k in SIZED else v for k, v in BREEDS[key].items()}
         b = self.b
         b_hh = b["Hs"] * 1.02
         self.pastern = 0.15 * b["Hs"]

@@ -172,12 +172,12 @@ vec2 mapDog(vec3 pw) {
     if (head < best) { best = head; part = 4.0; }
     vec2 res = vec2(fur, part);
 
-    vec3 nc = vec3(0.62 * R + uMuzzle, -0.11 * R, 0.0);
-    res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.17 * R, 0.15 * R, 0.2 * R)), 5.0));
+    vec3 nc = vec3(0.64 * R + uMuzzle, -0.1 * R, 0.0);
+    res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.23 * R, 0.19 * R, 0.27 * R)), 5.0));
     for (int s = 0; s < 2; s++) {
         float sg = s == 0 ? 1.0 : -1.0;
-        vec3 ec = vec3(0.5 * R, 0.18 * R, sg * 0.49 * R * mix(0.93, 1.0, uEyeOpen));
-        res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.15, 0.11 * mix(0.3, 1.0, uEyeOpen), 0.14) * R), 6.0));
+        vec3 ec = vec3(0.52 * R, 0.18 * R, sg * 0.5 * R * mix(0.93, 1.0, uEyeOpen));
+        res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.2, 0.15 * mix(0.3, 1.0, uEyeOpen), 0.19) * R), 6.0));
     }
     if (uJaw > 0.03) {
         vec3 mc = vec3(0.35 * R + uMuzzle * 0.45, -0.45 * R - uJaw * 0.12 * R, 0.0);
@@ -298,9 +298,13 @@ vec3 dogAlbedo(vec3 pw, float m) {
     vec3 q = toHead(p);
     float R = uHeadR, rc = uBodyR.x;
     float n = furN(p * 1.5) * 0.4 + strand(p) * 0.6;
-    if (m == 5.0) return lin(vec3(0.07, 0.06, 0.06));
+    if (m == 5.0) {  // naso: narici scure e tartufo leggermente granuloso
+        vec3 nq = q - vec3(0.64 * R + uMuzzle, -0.1 * R, 0.0);
+        float nostril = smoothstep(0.07 * R, 0.035 * R, length(vec2(nq.y + 0.04 * R, abs(nq.z) - 0.11 * R))) * step(0.08 * R, nq.x);
+        return lin(vec3(0.08, 0.07, 0.07) * (0.85 + 0.3 * noise(q * 3.0)) * (1.0 - 0.8 * nostril));
+    }
     if (m == 6.0) {  // occhio: pupilla, iride marrone calda, bordo scuro
-        vec3 ec = vec3(0.5 * R, 0.18 * R, sign(q.z) * 0.49 * R);
+        vec3 ec = vec3(0.52 * R, 0.18 * R, sign(q.z) * 0.5 * R);
         float c = dot(normalize(q - ec), normalize(vec3(0.8, 0.08, sign(q.z) * 0.6)));
         vec3 iris = mix(vec3(0.42, 0.24, 0.1), vec3(0.6, 0.38, 0.16), smoothstep(0.75, 0.9, c));
         return lin(c > 0.95 ? vec3(0.03) : c > 0.72 ? iris : vec3(0.12, 0.07, 0.05));
@@ -348,6 +352,10 @@ vec3 dogAlbedo(vec3 pw, float m) {
         if (m == 1.0 || m == 4.0) w = -smoothstep(uChest.y + rc * 0.4, uChest.y + rc * 1.0, p.y) * 0.5;
     }
     vec3 c = w >= 0.0 ? mix(coat, mark, clamp(w, 0.0, 1.0)) : mix(coat, coat2, -w);
+    if (m == 2.0 && p.y < uLegR.y * 1.4) {  // dita: solchi sulla punta della zampa
+        float toes = smoothstep(0.75, 1.0, abs(sin(p.z * 3.14159 / (uLegR.y * 0.55))));
+        c *= 1.0 - 0.35 * toes * smoothstep(uLegR.y * 1.4, uLegR.y * 0.4, p.y);
+    }
     if (m == 9.0) c = uPattern == 1 ? coat : mix(coat, coat2, 0.75);
     if (uPattern == 0) {  // maremmano: avorio, sfumature biscotto attorno alle orecchie e nelle ciocche
         if (m == 4.0) c = mix(c, coat2, 0.45 * smoothstep(0.1 * R, -0.5 * R, q.x) * smoothstep(-0.1 * R, 0.4 * R, q.y));
