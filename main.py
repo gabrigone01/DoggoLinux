@@ -909,6 +909,9 @@ def main():
     lock = QLockFile(QDir.temp().filePath("doggo.lock"))
     if not lock.tryLock(200):
         print("Il cane è già in giro sul desktop.")  # aperto due volte: un solo cane
+        if sys.platform in ("win32", "darwin"):  # senza console il messaggio sopra non lo vedrebbe nessuno
+            QMessageBox.information(None, "Doggo", "Doggo è già aperto.\n\nSe non lo vedi, chiudi tutti i processi "
+                                    "«Doggo» (Gestione attività → Dettagli) e riaprilo.")
         return
     cfg = load_config()
     if not CONFIG_PATH.exists():
