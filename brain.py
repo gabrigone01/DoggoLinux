@@ -462,8 +462,8 @@ class Brain:
     def run_activity(self, dt, T):
         a = self.activity
         self.timer -= dt
-        # di base è un cane contento: bocca appena socchiusa, coda su che scodinzola piano
-        T.update(tailUp=0.35, wagAmp=0.28, wagFreq=3.5, jaw=0.0, tongue=0.0, ears=0.15)
+        # di base è un cane contento: bocca socchiusa con la lingua, coda su che scodinzola piano
+        T.update(tailUp=0.35, wagAmp=0.28, wagFreq=3.5, jaw=self.dog.b.get("smile", 0.3), tongue=0.6, ears=0.15)
         if a in ("fetch", "play", "eat", "drink", "zoom"):
             self.games(dt, T)
             a = self.activity
@@ -526,7 +526,7 @@ class Brain:
         if a == "attend":
             T.update(ears=0.8, tailUp=0.6, wagAmp=0.5, wagFreq=8)
             if self.dog.key == "golden":
-                T.update(jaw=0.2, tongue=0.35, breath=2.0)
+                T.update(jaw=0.35, tongue=0.5, breath=2.0)
         if self.goal and self.run:
             T.update(jaw=0.4, tongue=0.6, breath=2.0, ears=-0.2, tailUp=0.4)
         if self.thinking:

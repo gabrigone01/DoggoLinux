@@ -9,10 +9,10 @@ ELEVATION = math.radians(14)  # inclinazione della camera, condivisa con lo shad
 
 BREEDS = {
     "maremmano": dict(
-        label="Pastore Maremmano Abruzzese", Hs=33, rc=14, rh=12.5, Lb=40, R=15.2, muzzle=8.8, neck=13,
+        label="Pastore Maremmano Abruzzese", Hs=36, rc=14, rh=12.5, Lb=42, R=13.6, muzzle=11, neck=13,
         neckR=10.5, tail=31, tailR=4.0, tailFur=4.2, legR=4.4, fur=2.4, ear="floppy", earLen=0.8, earTaper=0.6, tailBias=-0.75,
         mane=1.0, thigh=0.68, tail_kind="low", pattern=0, coat="#EFE8D8", coat2="#D6BF96", mark="#F8F4EC",
-        roof="#5E3A22", wood="#9C6B3E", independence=0.4, kscale=1.15,
+        roof="#5E3A22", wood="#9C6B3E", independence=0.4, kscale=1.15, smile=0.55,
         personality="saggio, calmo e protettivo; parli con la pacatezza di un guardiano di greggi abruzzese",
         greeting="Ciao. Veglio io qui. Di cosa hai bisogno?", greet_action="wag",
     ),
@@ -26,7 +26,7 @@ BREEDS = {
     ),
     "collie": dict(
         label="Border Collie", Hs=29, rc=11.5, rh=10, Lb=34, R=10.7, muzzle=8.5, neck=11,
-        neckR=7.4, tail=27, tailR=2.6, tailFur=2.0, legR=3.5, fur=1.2, mane=0.7, ear="semi", earLen=0.68,
+        neckR=7.4, tail=27, tailR=2.6, tailFur=2.0, legR=3.5, fur=1.2, mane=0.7, ear="semi", earLen=0.8,
         tail_kind="low", pattern=1, coat="#1E1F22", coat2="#151618", mark="#F4F3EF",
         roof="#2E5A86", wood="#BBA88C", independence=0.1, kscale=1.0,
         personality="intelligentissimo, attento a ogni movimento, iperattivo; ami organizzare e risolvere problemi",
@@ -42,7 +42,7 @@ BREEDS = {
     ),
     "shiba": dict(
         label="Shiba Inu", Hs=23, rc=10, rh=9, Lb=26, R=10, muzzle=6.3, neck=9,
-        neckR=6.8, tail=17, tailR=3.0, tailFur=1.4, legR=3.2, fur=0.8, ear="pointy", earLen=0.65,
+        neckR=6.8, tail=17, tailR=3.0, tailFur=1.4, legR=3.2, fur=0.8, ear="pointy", earLen=0.8,
         tail_kind="curl", pattern=2, coat="#C8692A", coat2="#A9531D", mark="#F7E6CC",
         roof="#962D2D", wood="#D4B386", independence=0.6, kscale=0.9,
         personality="furbo, indipendente e sornione, leggermente snob; aiuti, ma facendolo sembrare un favore",
@@ -50,8 +50,8 @@ BREEDS = {
     ),
     "meticcio": dict(
         label="Meticcio arruffato", Hs=21, rc=10, rh=9, Lb=28, R=10.5, muzzle=6.2, neck=8.5,
-        neckR=7.2, tail=19, tailR=3.2, tailFur=3.0, legR=3.3, fur=1.9, mane=0.45, ear="floppy", earLen=0.7, earTaper=0.35,
-        tail_kind="curl", pattern=5, coat="#A9733F", coat2="#7A4E28", mark="#DCC39C",
+        neckR=7.2, tail=19, tailR=3.2, tailFur=3.0, legR=3.3, fur=1.9, mane=0.45, ear="floppy", earLen=0.8,
+        earTaper=0.35, tail_kind="curl", pattern=5, coat="#A9733F", coat2="#7A4E28", mark="#DCC39C",
         roof="#3F6E8C", wood="#C7A57A", independence=0.3, kscale=0.9,
         personality="un meticcio piccolo e arruffato, dolcissimo e curioso di tutto; un po' timido con gli "
                     "sconosciuti ma affettuosissimo con chi ami, e felice per ogni passeggiata",
@@ -64,9 +64,8 @@ DEFAULT_BREED = "maremmano"
 GAITS = (((0.25, 0.75, 0.0, 0.5), 0.62),   # passo
          ((0.0, 0.5, 0.5, 0.0), 0.44),     # trotto: diagonali insieme
          ((0.58, 0.48, 0.0, 0.1), 0.3))    # galoppo: posteriori, poi anteriori, poi in volo
-SCALE = 1.6  # grandezza del cane sullo schermo: abbastanza pixel perché la faccia si legga
+SCALE = 1.25  # grandezza del cane sullo schermo
 SIZED = {"Hs", "rc", "rh", "Lb", "R", "muzzle", "neck", "neckR", "tail", "tailR", "tailFur", "legR", "fur", "kscale"}
-
 
 
 # ------------------------------------------------------------------ vettori (tuple x, y, z)
@@ -154,7 +153,7 @@ class Dog:
         self.gait = 0.0         # fase del passo
         self.speed = 0.0        # velocità attuale (px/s) per il passo
         self.wag_phase = 0.0
-        self.carry = 0          # in bocca: 0 niente, 1 pallina, 2 rametto
+        self.carry = 0          # in bocca: 0 niente, 1 pallina, 2 rametto, 3 osso, 4 calzino
 
     def set_breed(self, key):
         self.key = key
