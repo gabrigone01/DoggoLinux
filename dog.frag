@@ -101,8 +101,8 @@ float sdEar(vec3 q, int i) {
 }
 
 vec3 toHead(vec3 p) { return transpose(uHeadRot) * (p - uHeadPos); }
-// occhioni tondi, più davanti che di lato: visti di fronte non sembrano distanti
-vec3 eyeC(float sg) { return vec3(0.64 * uHeadR, 0.12 * uHeadR, sg * 0.29 * uHeadR); }
+// occhi a mandorla rivolti in avanti, verso il muso, come nei cani veri
+vec3 eyeC(float sg) { return vec3(0.63 * uHeadR, 0.2 * uHeadR, sg * 0.38 * uHeadR); }
 
 vec2 mapDog(vec3 pw) {
     vec3 p = transpose(uBodyRot) * (pw - uRoot);
@@ -152,7 +152,7 @@ vec2 mapDog(vec3 pw) {
     float M = uMuzzle;
     float head = sdEllipsoid(q - vec3(-0.15 * R, 0.12 * R, 0.0), vec3(0.95 * R, 0.74 * R, 0.82 * R));
     vec3 bq = vec3(q.x, q.y, abs(q.z));
-    head = smin(head, sdEllipsoid(bq - vec3(0.36 * R, 0.3 * R, 0.3 * R), vec3(0.24, 0.12, 0.2) * R), 0.3 * R);
+    head = smin(head, sdEllipsoid(bq - vec3(0.4 * R, 0.32 * R, 0.34 * R), vec3(0.28, 0.17, 0.24) * R), 0.22 * R);
     head = smin(head, sdEllipsoid(q - vec3(0.02 * R, -0.24 * R, 0.0), vec3(0.6 * R, 0.46 * R, 0.74 * R)), 0.3 * R);
     vec3 mq = vec3(q.x, q.y, q.z * 1.08);
     head = smin(head, sdRoundCone(mq, vec3(0.5 * R, -0.22 * R, 0.0), vec3(0.5 * R + M, -0.2 * R, 0.0), 0.42 * R, 0.25 * R), 0.38 * R);
@@ -162,7 +162,8 @@ vec2 mapDog(vec3 pw) {
     vec3 jq = q - hinge;
     jq = vec3(cos(ja) * jq.x - sin(ja) * jq.y, sin(ja) * jq.x + cos(ja) * jq.y, jq.z) + hinge;
     float jaw = sdRoundCone(jq, vec3(0.15 * R, -0.5 * R, 0.0), vec3(0.45 * R + M * 0.85, -0.5 * R, 0.0), 0.27 * R, 0.14 * R);
-    head = smin(head, jaw, 0.16 * R * max(0.0, 1.0 - uJaw * 4.0));  // bocca chiusa: mento unito al muso
+    // bocca chiusa: mento unito al muso; aperta: separati (k mai zero: smin dividerebbe per zero e la testa sparirebbe)
+    head = smin(head, jaw, max(0.16 * R * (1.0 - uJaw * 4.0), 0.01));
     head -= uFur * (0.08 + 0.1 * (furN(q * 0.9) - 0.4));
 
     float fur = smin(smin(core, legs, rh * 0.45), tail, uTailR * 1.2);
@@ -175,11 +176,11 @@ vec2 mapDog(vec3 pw) {
     vec2 res = vec2(fur, part);
 
     vec3 nc = vec3(0.6 * R + uMuzzle, -0.08 * R, 0.0);
-    res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.18 * R, 0.15 * R, 0.19 * R)), 5.0));
+    res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.21 * R, 0.17 * R, 0.24 * R)), 5.0));
     for (int s = 0; s < 2; s++) {
         float sg = s == 0 ? 1.0 : -1.0;
         vec3 ec = eyeC(sg) * vec3(1.0, 1.0, mix(0.93, 1.0, uEyeOpen));
-        res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.22, 0.25 * mix(0.25, 1.0, uEyeOpen), 0.25) * R), 6.0));
+        res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.19, 0.12 * mix(0.25, 1.0, uEyeOpen), 0.21) * R), 6.0));
     }
     if (uJaw > 0.03) {
         vec3 mc = vec3(0.35 * R + uMuzzle * 0.45, -0.45 * R - uJaw * 0.12 * R, 0.0);
@@ -321,13 +322,11 @@ vec3 dogAlbedo(vec3 pw, float m) {
     if (m == 6.0) {  // occhio: pupilla, iride marrone calda, bordo scuro
         vec3 ec = eyeC(sign(q.z));
         float c = dot(normalize(q - ec), normalize(vec3(0.85, 0.05, sign(q.z) * 0.5)));
-        // occhio a bottone: quasi nero, con un calore marrone solo in basso
-        float low = smoothstep(0.0, -0.5, normalize(q - ec).y);
-        vec3 iris = mix(vec3(0.05, 0.03, 0.02), vec3(0.3, 0.17, 0.08), low * smoothstep(0.35, 0.7, c));
-        // riflesso fisso in alto verso l'esterno, uguale nei due occhi: lo sguardo sembra vivo
-        float glint = dot(normalize(q - ec), normalize(vec3(0.7, 0.55, sign(q.z) * 0.45)));
-        if (glint > 0.95) return vec3(0.95);
-        return lin(c > 0.8 ? vec3(0.02) : c > 0.35 ? iris : vec3(0.04, 0.03, 0.02));
+        // iride ambra con pupilla, bordo nero delle palpebre; piccolo riflesso uguale nei due occhi
+        vec3 iris = mix(vec3(0.24, 0.11, 0.04), vec3(0.46, 0.24, 0.09), smoothstep(0.6, 0.85, c));
+        float glint = dot(normalize(q - ec), normalize(vec3(0.75, 0.5, sign(q.z) * 0.42)));
+        if (glint > 0.985) return vec3(0.9);
+        return lin(c > 0.93 ? vec3(0.02) : c > 0.6 ? iris : vec3(0.03, 0.02, 0.02));
     }
     if (m == 7.0) return lin(mix(vec3(0.07, 0.05, 0.05), vec3(0.5, 0.17, 0.2), smoothstep(0.24 * R, 0.08 * R, abs(q.z))));
     if (m == 8.0) return lin(vec3(0.93, 0.5, 0.55));
@@ -383,9 +382,10 @@ vec3 dogAlbedo(vec3 pw, float m) {
         c *= 1.0 - 0.35 * toes * smoothstep(uLegR.y * 1.4, uLegR.y * 0.4, p.y);
     }
     if (m == 9.0) c = uPattern == 1 ? coat : mix(coat, coat2, 0.75);
-    if (m == 4.0) {  // guance appena rosate sotto gli occhi
-        vec3 ch = q - vec3(0.62 * R, -0.12 * R, sign(q.z) * 0.42 * R);
-        c = mix(c, vec3(0.85, 0.42, 0.42), 0.35 * smoothstep(0.2 * R, 0.05 * R, length(ch)));
+    if (m == 4.0) {  // labbra nere lungo la bocca, dall'angolo fino al naso
+        float lip = smoothstep(0.1 * R, 0.03 * R, abs(q.y + 0.4 * R))
+                  * smoothstep(0.2 * R, 0.35 * R, q.x) * smoothstep(0.5 * R + uMuzzle * 1.05, 0.5 * R + uMuzzle * 0.8, q.x);
+        c = mix(c, vec3(0.05, 0.04, 0.04), 0.75 * lip);
     }
     if (uPattern == 0) {  // maremmano: avorio, sfumature biscotto attorno alle orecchie e nelle ciocche
         if (m == 4.0) c = mix(c, coat2, 0.45 * smoothstep(0.1 * R, -0.5 * R, q.x) * smoothstep(-0.1 * R, 0.4 * R, q.y));

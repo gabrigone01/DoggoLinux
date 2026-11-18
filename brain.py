@@ -1150,7 +1150,7 @@ class Brain:
             elif name == "lick":
                 T.update(jaw=0.3, tongue=1.0 if (tau * 2.5) % 1.0 < 0.5 else 0.0)
             elif name == "yawn":
-                T.update(jaw=math.sin(math.pi * k) ** 0.7, eyes=0.0, headPitch=-0.35, tongue=0.4, ears=-0.4)
+                T.update(jaw=max(0.0, math.sin(math.pi * min(k, 1.0))) ** 0.7, eyes=0.0, headPitch=-0.35, tongue=0.4, ears=-0.4)
             elif name == "happy":
                 T.update(jaw=0.5, tongue=0.85, breath=2.0, wagAmp=0.6, wagFreq=10, tailUp=0.7)
             elif name == "think":

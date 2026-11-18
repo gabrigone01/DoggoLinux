@@ -9,7 +9,7 @@ ELEVATION = math.radians(14)  # inclinazione della camera, condivisa con lo shad
 
 BREEDS = {
     "maremmano": dict(
-        label="Pastore Maremmano Abruzzese", Hs=36, rc=14, rh=12.5, Lb=42, R=13.6, muzzle=11, neck=13,
+        label="Pastore Maremmano Abruzzese", Hs=36, rc=14, rh=12.5, Lb=42, R=13.6, muzzle=12.5, neck=13,
         neckR=10.5, tail=31, tailR=4.0, tailFur=4.2, legR=4.4, fur=2.4, ear="floppy", earLen=0.8, earTaper=0.6, tailBias=-0.75,
         mane=1.0, thigh=0.68, tail_kind="low", pattern=0, coat="#EFE8D8", coat2="#D6BF96", mark="#F8F4EC",
         roof="#5E3A22", wood="#9C6B3E", independence=0.4, kscale=1.15,
@@ -66,8 +66,7 @@ GAITS = (((0.25, 0.75, 0.0, 0.5), 0.62),   # passo
          ((0.58, 0.48, 0.0, 0.1), 0.3))    # galoppo: posteriori, poi anteriori, poi in volo
 SCALE = 1.6  # grandezza del cane sullo schermo: abbastanza pixel perché la faccia si legga
 SIZED = {"Hs", "rc", "rh", "Lb", "R", "muzzle", "neck", "neckR", "tail", "tailR", "tailFur", "legR", "fur", "kscale"}
-# proporzioni da cucciolone, uguali per tutte le razze: testa più grande, muso corto, zampe e schiena più corte
-CUTE = dict(R=1.4, muzzle=0.6, Hs=0.8, Lb=0.85, mane=0.6)
+
 
 
 # ------------------------------------------------------------------ vettori (tuple x, y, z)
@@ -160,8 +159,7 @@ class Dog:
     def set_breed(self, key):
         self.key = key
         # misure in pixel scalate tutte insieme (colori e rapporti restano uguali)
-        self.b = {k: v * (SCALE if k in SIZED else 1) * CUTE.get(k, 1) if isinstance(v, (int, float)) else v
-                  for k, v in BREEDS[key].items()}
+        self.b = {k: v * SCALE if k in SIZED else v for k, v in BREEDS[key].items()}
         b = self.b
         b_hh = b["Hs"] * 1.02
         self.pastern = 0.15 * b["Hs"]

@@ -316,6 +316,16 @@ class BrainTest(unittest.TestCase):
                         break
                 self.assertIsNone(brain.goal, (key, gx, gy))
 
+    def test_pose_values_stay_real_numbers(self):
+        # lo sbadiglio all'ultimo fotogramma dava un numero complesso: lo shader faceva chiudere l'app
+        for dt in (1 / 30, 1 / 7, 0.1):
+            self.brain.perform(["yawn"] * 3)
+            for _ in range(200):
+                self.brain.update(dt)
+                for k, v in self.dog.target.items():
+                    self.assertIsInstance(v, (int, float), k)
+                    self.assertTrue(math.isfinite(v), k)
+
     def test_birds_and_cat_get_chased_away(self):
         for kind in ("birds", "cat"):
             self.brain.sfx = []
@@ -434,7 +444,9 @@ class SoundTest(unittest.TestCase):
 
     def test_player_is_silent_when_disabled(self):
         import sounds
-        with tempfile.TemporaryDirectory() as d, mock.patch("subprocess.Popen") as popen:
+        # niente generazione in background: scriverebbe nella cartella mentre il test la cancella
+        with tempfile.TemporaryDirectory() as d, mock.patch("subprocess.Popen") as popen, \
+                mock.patch.object(sounds.Player, "prepare"):
             p = sounds.Player(d, "golden", enabled=False)
             p.ready.add(("bark", "golden"))
             p.play("bark")
