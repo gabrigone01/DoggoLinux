@@ -50,6 +50,11 @@ BREEDS = {
     ),
 }
 DEFAULT_BREED = "maremmano"
+# andature: sfasamento di ogni zampa (anteriore vicina, anteriore lontana, posteriore vicina, posteriore lontana)
+# e frazione del ciclo in appoggio
+GAITS = (((0.25, 0.75, 0.0, 0.5), 0.62),   # passo
+         ((0.0, 0.5, 0.5, 0.0), 0.44),     # trotto: diagonali insieme
+         ((0.58, 0.48, 0.0, 0.1), 0.3))    # galoppo: posteriori, poi anteriori, poi in volo
 SCALE = 1.25  # grandezza del cane sullo schermo
 SIZED = {"Hs", "rc", "rh", "Lb", "R", "muzzle", "neck", "neckR", "tail", "tailR", "tailFur", "legR", "fur", "kscale"}
 
@@ -163,12 +168,31 @@ class Dog:
         self.yaw += math.copysign(min(abs(diff), dt * math.radians(300), abs(diff) * dt * 7 + dt * 0.5), diff)
         self.wag_phase += dt * min(self.p["wagFreq"], 4.2) * math.tau  # oltre ~4 Hz a 30 fps sembra a scatti
         if abs(self.speed) > 0.1:  # velocità negativa = passi all'indietro
-            stride = self.stride()
-            self.gait = (self.gait + dt * self.speed / (stride / 0.6)) % 1.0  # piedi fermi in appoggio
+            freq = self.gait_params()[3]
+            self.gait = (self.gait + math.copysign(freq * dt, self.speed)) % 1.0
+
+    def gait_params(self):
+        """Andatura secondo la velocità: (sfasamenti delle 4 zampe, appoggio, falcata, frequenza, pesi).
+
+        Passo: zampe una alla volta. Trotto: coppie diagonali. Galoppo: spingono le posteriori,
+        poi atterrano le anteriori, con un attimo in volo. La falcata è calcolata perché i piedi
+        in appoggio restino fermi a terra (falcata = velocità × appoggio / frequenza).
+        """
+        size = (self.b["Hs"] / 37) ** 0.5  # i cani piccoli fanno passi più fitti
+        v = abs(self.speed) / max(size, 0.4)
+        trot = min(max((v - 60) / 35, 0.0), 1.0)
+        gallop = min(max((v - 140) / 45, 0.0), 1.0)
+        walk = 1 - trot
+        trot *= 1 - gallop
+        weights = (walk, trot, gallop)
+        offsets = [walk * a + trot * b + gallop * c for a, b, c in zip(*(g[0] for g in GAITS))]
+        duty = sum(w * g[1] for w, g in zip(weights, GAITS))
+        freq = min(1.25 + v * 0.0115, 3.3) / size
+        stride = abs(self.speed) * duty / freq
+        return offsets, duty, stride, freq, weights
 
     def stride(self):
-        base = self.b["Hs"] * (0.42 if self.b["Hs"] > 15 else 0.8) + 4
-        return base * (1 + 0.8 * min(abs(self.speed) / 160, 1.0))  # di corsa allunga il passo
+        return self.gait_params()[2]
 
     # ------------------------------------------------------------ scheletro
     def rig(self):
@@ -177,11 +201,15 @@ class Dog:
         rc, rh, Lb, R = b["rc"], b["rh"], b["Lb"], b["R"]
         r2 = b["legR"]
         moving = min(abs(self.speed) / 20.0, 1.0) * (1 - f) * (1 - r)
-        bob = -0.4 * abs(math.sin(self.gait * math.tau * 2)) * moving
+        offsets, duty, stride, _, (w_walk, w_trot, w_gallop) = self.gait_params()
+        g = self.gait * math.tau
+        bob = (-0.4 * w_walk - 1.0 * w_trot) * abs(math.sin(g * 2)) * moving
+        flex = 0.06 * b["Hs"] * w_gallop * moving  # galoppo: la schiena si raccoglie e si distende
+        bob += flex * 0.8 * math.sin(g + 1.2)       # in volo dopo la spinta delle posteriori
         breath = math.sin(self.t * (2.4 if P["breath"] > 1.5 else 1.4)) * 0.35 * P["breath"]
 
-        cy = lerp(b["Hs"] + rc * 0.45, rc * 0.98 + 0.5, f) + bob + breath * 0.5
-        hy = lerp(self.Hh + rh * 0.4, rh * 0.95, r) + bob
+        cy = lerp(b["Hs"] + rc * 0.45, rc * 0.98 + 0.5, f) + bob + breath * 0.5 + flex * math.sin(g + 2.6)
+        hy = lerp(self.Hh + rh * 0.4, rh * 0.95, r) + bob + flex * math.sin(g + 0.4)
         if f > 0.5 and r < 0.5:  # inchino: il posteriore resta alto
             hy = lerp(self.Hh + rh * 0.4, self.Hh + rh * 0.7, f)
         cx = Lb / 2
@@ -189,14 +217,15 @@ class Dog:
         chest, hip = (cx, cy, 0.0), (hx, hy, 0.0)
 
         legs = []
-        stride, lift = self.stride(), min(b["Hs"] * 0.09, 3.0) * (1 + min(abs(self.speed) / 160, 1.0))
+        lift = b["Hs"] * (0.08 * w_walk + 0.15 * w_trot + 0.2 * w_gallop)
+        swing = 1 - duty
         for i, (front, side) in enumerate(((True, 1), (True, -1), (False, 1), (False, -1))):
-            phase = (self.gait + (0.25, 0.75, 0.0, 0.5)[i]) % 1.0
-            if phase < 0.6:
-                off, up = stride * (0.5 - phase / 0.6), 0.0
-            else:
-                v = (phase - 0.6) / 0.4
-                off, up = stride * (-0.5 + v), lift * math.sin(math.pi * v)
+            phase = (self.gait + offsets[i]) % 1.0
+            if phase < duty:  # appoggio: il piede resta fermo mentre il corpo avanza
+                off, up = stride * (0.5 - phase / duty), 0.0
+            else:  # volo della zampa: si alza e va avanti
+                v = (phase - duty) / swing
+                off, up = stride * (-0.5 + (1 - math.cos(math.pi * v)) / 2), lift * math.sin(math.pi * v)
             off, up = off * moving, up * moving
             if front:
                 top = (cx - rc * 0.15, cy - rc * 0.5, side * rc * 0.5)
@@ -243,7 +272,8 @@ class Dog:
         # collo e testa
         neck0 = (cx + rc * 0.5, cy + rc * 0.45, 0.0)
         head_yaw, head_pitch = P["headYaw"], P["headPitch"]
-        alpha = math.radians(60) - head_pitch * 0.55 + f * 0.1
+        head_pitch += 0.1 * w_gallop * moving * math.sin(g + 0.8)  # la testa accompagna il galoppo
+        alpha = math.radians(60) - head_pitch * 0.55 + f * 0.1 - 0.25 * w_gallop * moving
         nd = mat_vec(rot_yaw(head_yaw * 0.45), (math.cos(alpha), math.sin(alpha), 0))
         head_pos = add(neck0, mul(nd, b["neck"]))
         head_rot = mat_mul(rot_yaw(head_yaw), mat_mul(rot_pitch(head_pitch - 0.12), rot_roll(P["headRoll"])))  # testa portata alta

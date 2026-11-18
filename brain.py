@@ -524,7 +524,7 @@ class Brain:
                 else:
                     toy.state = "carried"
                     self.dog.carry = 1 if toy.kind == "ball" else 2
-                    self.go(*self.origin, run=a == "fetch")
+                    self.go(*self.origin, run="trot" if a == "fetch" else False)
                     self.phase, self.phase_t = "return", 0.0
         elif ph == "return":
             T.update(jaw=0.28, tongue=0.0, tailUp=0.75, wagAmp=0.5, wagFreq=4.0, ears=0.4)
@@ -889,10 +889,18 @@ class Brain:
             self.dog.yaw_target = nearest_angle(self.dog.yaw, math.atan2(hy, hx))  # giù sullo schermo = verso di te
         facing = max(0.0, math.cos(self.dog.yaw - self.dog.yaw_target))
         size = self.dog.b["Hs"] / 30
-        base = 175 if self.run and self.activity == "home" else 115 if self.run else 16 if self.activity == "sniff" else 46
+        left = math.hypot(self.goal[0] - self.x, self.goal[1] - self.y)
+        if self.run == "trot":  # riporta il giocattolo: trotto fiero
+            want = 115 if left > 45 else 50
+        elif self.run:  # rincorre, corre a casa: galoppo se è lontano, poi trotto e passo per arrivare
+            want = 250 if left > 260 else 120 if left > 60 else 50
+        else:
+            want = 16 if self.activity == "sniff" else 46
         P = self.dog.p
         standing = max(0.0, 1.0 - 2.5 * max(P["rear"], P["front"], P["belly"]))  # non striscia: parte quando è in piedi
-        speed = base * (0.6 + 0.4 * size) * facing ** 3 * standing
+        want *= (0.6 + 0.4 * size) * facing ** 3 * standing
+        cur = getattr(self, "cur_speed", 0.0)
+        speed = self.cur_speed = cur + max(-420 * dt, min(260 * dt, want - cur))  # accelera e frena come un cane vero
         step = speed * dt
         self.dog.speed = speed
         if dist <= step:
@@ -900,7 +908,7 @@ class Brain:
             if final:
                 self.goal = None
                 self.run = False
-                self.dog.speed = 0.0
+                self.dog.speed = self.cur_speed = 0.0
             return True
         self.x += hx * step
         self.y += hy * step
