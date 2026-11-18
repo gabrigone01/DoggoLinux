@@ -1,0 +1,6 @@
+# contiene la chiave API di Gemini
+config.json
+*.tmp
+__pycache__/
+build/
+*.deb
