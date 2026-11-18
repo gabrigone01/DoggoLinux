@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (QApplication, QHBoxLayout, QInputDialog, QLabel, QL
                              QVBoxLayout, QWidget)
 
 import dog3d
+import sounds
 import view3d
 from ai_handler import ChatError, GeminiChat, parse_reply, system_prompt
 from brain import Areas, Brain
@@ -36,7 +37,7 @@ if sys.platform == "darwin":
 else:
     AUTOSTART = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "autostart" / "doggo.desktop"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"  # avvio automatico su Windows
-DEFAULTS = {"breed": dog3d.DEFAULT_BREED, "name": "", "kennel": "right", "windows": True, "api_key": "",
+DEFAULTS = {"breed": dog3d.DEFAULT_BREED, "name": "", "kennel": "right", "windows": True, "sounds": True, "api_key": "",
             "model": "gemini-flash-latest"}
 FLAGS = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
 
@@ -322,6 +323,7 @@ class Pet(QObject):
             bridge.windowsChanged.connect(lambda wins: setattr(self.brain, "windows", wins))
         self.brain.play_windows = cfg["windows"]
         self.cmd_rest = {}  # frazioni di pixel non ancora inviate
+        self.sound = sounds.Player(CONFIG_PATH.parent / "sounds", cfg["breed"], cfg["sounds"])
         self.set_breed(cfg["breed"], save=False)
         self.brain.place_home()
         self.kennel.show()
@@ -399,6 +401,9 @@ class Pet(QObject):
         toy = self.brain.toy
         self.toy_window.follow(toy)
         self.send_window_moves()
+        for name in self.brain.sfx:
+            self.sound.play(name)
+        self.brain.sfx = []
         if abs(self.kennel.food - self.brain.food) > 0.03:
             self.kennel.food = self.brain.food
             self.kennel.update()
@@ -588,6 +593,10 @@ class Pet(QObject):
         play.setEnabled(self.bridge is not None)
         play.triggered.connect(self.toggle_windows)
         menu.addAction("Nome del cane…", self.ask_name)
+        snd = menu.addAction("Suoni")
+        snd.setCheckable(True)
+        snd.setChecked(self.cfg["sounds"])
+        snd.triggered.connect(self.toggle_sounds)
         auto = menu.addAction("Avvia all'accensione del PC")
         auto.setCheckable(True)
         auto.setChecked(autostart_enabled())
@@ -618,6 +627,10 @@ class Pet(QObject):
             if under and w.geometry() == under.geometry():
                 w.activateWindow()
 
+    def toggle_sounds(self, on):
+        self.cfg["sounds"] = self.sound.enabled = bool(on)
+        save_config(self.cfg)
+
     def toggle_windows(self, on):
         self.cfg["windows"] = self.brain.play_windows = bool(on)
         save_config(self.cfg)
@@ -634,6 +647,8 @@ class Pet(QObject):
     def set_breed(self, key, save=True):
         self.cfg["breed"] = key
         self.dog.set_breed(key)
+        if hasattr(self, "sound"):
+            self.sound.set_breed(key)  # voce della razza
         self.view.resize(*self.dog.window_size())
         self.kennel.breed = self.dog.b
         self.kennel.resize(*view3d.kennel_size(self.dog.b))

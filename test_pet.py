@@ -317,6 +317,39 @@ class ConfigTest(unittest.TestCase):
             self.assertEqual(main.load_config(path)["breed"], dog3d.DEFAULT_BREED)
 
 
+class SoundTest(unittest.TestCase):
+    def test_every_sound_is_audible_and_written(self):
+        import wave
+        import sounds
+        with tempfile.TemporaryDirectory() as d:
+            for name in sounds.NAMES:
+                xs = sounds.make(name, 300)
+                self.assertGreater(len(xs), sounds.RATE * 0.05, name)
+                self.assertGreater(max(abs(v) for v in xs), 1e-3, name)
+                path = Path(d) / f"{name}.wav"
+                sounds.write_wav(path, xs)
+                with wave.open(str(path)) as w:
+                    self.assertEqual((w.getframerate(), w.getnchannels()), (sounds.RATE, 1))
+
+    def test_brain_asks_for_sounds(self):
+        brain = Brain(dog3d.Dog("shiba"), Areas(SCREENS), random.Random(0))
+        brain.perform(["bark"])
+        brain.throw("ball", 600, 1500)
+        for _ in range(60):
+            brain.update(1 / 30)
+        self.assertIn("bark", brain.sfx)
+        self.assertIn("yip", brain.sfx)
+        self.assertIn("bounce", brain.sfx)
+
+    def test_player_is_silent_when_disabled(self):
+        import sounds
+        with tempfile.TemporaryDirectory() as d, mock.patch("subprocess.Popen") as popen:
+            p = sounds.Player(d, "golden", enabled=False)
+            p.ready.add(("bark", "golden"))
+            p.play("bark")
+            popen.assert_not_called()
+
+
 class AutostartTest(unittest.TestCase):
     def test_autostart_toggle_writes_a_launcher(self):
         import main

@@ -9,7 +9,7 @@ rm -rf build
 mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/share/doggo" "$ROOT/usr/bin" "$ROOT/usr/share/applications" \
          "$ROOT/usr/share/icons/hicolor/256x256/apps"
 
-cp main.py brain.py dog3d.py view3d.py kwin_bridge.py ai_handler.py dog.frag icon.png "$ROOT/usr/share/doggo/"
+cp main.py brain.py dog3d.py view3d.py kwin_bridge.py ai_handler.py sounds.py dog.frag icon.png "$ROOT/usr/share/doggo/"
 cp icon.png "$ROOT/usr/share/icons/hicolor/256x256/apps/doggo.png"
 
 cat > "$ROOT/usr/bin/doggo" <<'SH'

@@ -8,6 +8,11 @@ import dog3d
 # durata (s) delle azioni "espressive" sovrapposte all'attività in corso
 ACTIONS = dict(wag=2.5, ears_up=2.0, tilt=2.0, bark=1.1, whine=2.5, bow=1.8, jump=1.2, spin=1.6, sit=4.0,
                lie=5.0, sniff=2.5, lick=1.6, yawn=2.2, happy=3.0, think=1.0, shake=1.4, scratch=2.6)
+# versi delle azioni e delle attività (vedi sounds.py)
+ACTION_SOUND = dict(bark="bark", whine="whine", yawn="yawn", happy="pant", sniff="sniff", lick="lick", shake="shake",
+                    scratch="scratch", bow="yip", spin="yip", jump="yip")
+ACTIVITY_SOUND = dict(howl="howl", dig="dig", roll="pant", shake="shake", scratch="scratch", stretch="yawn",
+                      petted="pant", givepaw="yip", bellyrub="pant")
 TOWARD_CAMERA = (0.0, math.sin(dog3d.ELEVATION), math.cos(dog3d.ELEVATION))
 
 
@@ -84,6 +89,7 @@ class Toy:
         self.angle, self.spin = 0.0, (9.0 if kind == "stick" else 0.0)
         self.state = "flying"   # flying, rest, carried
         self.idle = 0.0
+        self.events = []        # rimbalzi da far sentire
 
     def step(self, dt, areas):
         if self.state != "flying":
@@ -101,6 +107,8 @@ class Toy:
         self.angle += self.spin * dt
         if self.h <= 0:
             self.h = 0.0
+            if self.vh < -150:
+                self.events.append("bounce" if self.kind == "ball" else "clack")
             if self.kind == "ball" and self.vh < -150:
                 self.vh = -self.vh * 0.5
                 self.vx, self.vy = self.vx * 0.8, self.vy * 0.8
@@ -151,6 +159,9 @@ class Brain:
         self.target = None              # finestra scelta per giocare
         self.zig = 1                    # lato dello zig-zag quando la meta è quasi in verticale
         self.held = False               # preso in braccio col mouse
+        self.sfx = []                   # versi da suonare (li suona main)
+        self.next_bark = 90.0
+        self.next_noise = 0.0
 
     # ------------------------------------------------------------ comandi esterni
     @property
@@ -174,6 +185,7 @@ class Brain:
         if self.areas.at(gx, gy) is None:
             return
         self.go(gx, gy + 30, run=True)  # si ferma col muso sotto al cursore
+        self.sfx.append("bark")
         self.activity, self.timer = "come", 30.0
         self.perform(["ears_up"])
 
@@ -199,12 +211,14 @@ class Brain:
         self.dog.carry = 0
         self.activity, self.timer, self.phase = "fetch", 60.0, "watch"
         self.perform(["ears_up"])
+        self.sfx.append("yip")
 
     LIFT = 22  # di quanto lo sollevi da terra (px): resta l'ombra sotto
 
     def pick_up(self):
         """Preso per la collottola: smette quello che stava facendo."""
         self.held = True
+        self.sfx.append("yip")
         self.goal = self.perch = self.leap = None
         self.dog.carry = 0
         if self.activity in ("fetch", "play"):
@@ -221,6 +235,7 @@ class Brain:
         i = self.areas.at(self.x, self.y)
         i = self.areas.nearest(self.x, self.y) if i is None else i
         self.x, self.y = self.areas.clamp(i, self.x, self.y, *self.margins())
+        self.sfx.append("thud")
         self.start("stand", 2.0)
         self.perform(["shake", "wag"])
 
@@ -236,10 +251,16 @@ class Brain:
         self.follow_perch()
         if self.toy:
             self.toy.step(dt, self.areas)
+            self.sfx += self.toy.events
+            self.toy.events = []
             if self.toy.state == "rest" and self.activity not in ("fetch", "play"):
                 self.toy.idle += dt
                 if self.toy.idle > 25:
                     self.toy = None  # dopo un po' il gioco abbandonato sparisce
+        if self.t > self.next_bark:  # ogni tanto abbaia da solo
+            self.next_bark = self.t + self.rng.uniform(60, 200)
+            if self.activity not in ("sleep", "held", "eat") and not self.listening:
+                self.perform(["bark"])
         self.food = min(1.0, self.food + dt / 900)  # la ciotola si riempie piano piano
         dog = self.dog
         T = dict(dog3d.POSE_DEFAULTS)
@@ -267,6 +288,8 @@ class Brain:
             self.x, self.y = lerp(x0, x1, k), lerp(y0, y1, k)
             T.update(hop=math.sin(math.pi * k) * (22 + 0.25 * abs(y1 - y0)), rear=0.3, front=0.2, ears=0.6, tailUp=0.7)
             self.leap = (t, *self.leap[1:]) if t < dur else None
+            if self.leap is None:
+                self.sfx.append("thud")
             self.dog.speed = 0.0
         self.look(dt, T)
         if self.t > self.next_blink:
@@ -279,6 +302,8 @@ class Brain:
     # ------------------------------------------------------------ attività autonome
     def start(self, activity, duration):
         self.activity, self.timer = activity, duration
+        if activity in ACTIVITY_SOUND:
+            self.sfx.append(ACTIVITY_SOUND[activity])
         if activity == "spin":
             self.dog.yaw_target += math.tau * self.rng.choice((1, -1))
 
@@ -330,6 +355,7 @@ class Brain:
             self.go(plan["x"], plan["y"])
             self.activity, self.timer, self.phase = "tug", 40.0, "go"
         elif name == "zoom":
+            self.sfx.append("yip")
             self.activity, self.timer, self.count = "zoom", 30.0, self.rng.randint(3, 5)
             self.zoom_next()
         elif name == "hop":
@@ -390,6 +416,9 @@ class Brain:
             T["rear"] = 1.0
         if a in ("lie", "sleep"):
             T["front"] = T["rear"] = 1.0
+        if a == "sleep" and self.t > self.next_noise:
+            self.next_noise = self.t + self.rng.uniform(3.5, 6.0)
+            self.sfx.append("snore")
         if a == "sleep":
             T.update(eyes=0.0, headPitch=0.35, ears=-0.3, tailUp=-0.6, wagAmp=0.0, breath=0.8, jaw=0.0, tongue=0.0)
         if a in ("sniff", "sniffing"):
@@ -457,6 +486,9 @@ class Brain:
                 self.phase, self.phase_t = "eating", 0.0
             elif ph == "eating":
                 chew = 0.32 * max(0.0, math.sin(self.t * 9))
+                if self.t > self.next_noise:
+                    self.next_noise = self.t + 1.3
+                    self.sfx.append("crunch")
                 T.update(headPitch=0.95, jaw=chew, tongue=0.0, ears=0.1, tailUp=0.5, wagAmp=0.35, wagFreq=3.0)
                 self.food = max(0.0, self.food - dt / 14)
                 if self.phase_t > 7 or self.food <= 0:
@@ -511,6 +543,7 @@ class Brain:
                     toy.x = self.x + math.cos(self.dog.yaw) * self.reach()
                     toy.y = self.y + math.sin(self.dog.yaw) * self.reach() * 0.5
                     toy.idle = 0.0
+                    self.sfx.append("pant")
                     self.start("attend", 7.0)  # seduto, ti guarda: "ancora!"
                     self.perform(["wag"])
         # mentre gioca segue la pallina con lo sguardo
@@ -634,6 +667,8 @@ class Brain:
             self.phase, self.phase_t = "bite", 0.0
             self.pulled = 0.0
         elif ph == "bite":  # addenta il bordo
+            if self.phase_t < dt * 1.5:
+                self.sfx.append("growl")
             T.update(front=0.3, headPitch=0.15, jaw=0.6 if self.phase_t < 0.3 else 0.12, tongue=0.0, ears=-0.3,
                      tailUp=0.7, wagAmp=0.5, wagFreq=4.0)
             if self.phase_t > 0.6:
@@ -646,6 +681,9 @@ class Brain:
             self.dog.speed = -38.0
             self.pulled += step
             self.window_cmds.append([plan["id"], plan["side"] * step, 0.0])
+            if self.t > self.next_noise:
+                self.next_noise = self.t + 1.1
+                self.sfx.append("growl")
             if self.pulled >= plan["pull"]:
                 self.dog.speed = 0.0
                 self.perform(["shake", "wag"])
@@ -656,6 +694,8 @@ class Brain:
         if self.queue and not self.overlays:
             name = self.queue.popleft()
             self.overlays.append([name, 0.0, ACTIONS[name]])
+            if name in ACTION_SOUND:
+                self.sfx.append(ACTION_SOUND[name])
             if name == "spin":
                 self.dog.yaw_target += math.tau
         for ov in self.overlays:
