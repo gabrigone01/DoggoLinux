@@ -20,20 +20,33 @@ GL_COLOR_BUFFER_BIT, GL_TRIANGLES = 0x4000, 0x0004
 
 def surface_format():
     fmt = QSurfaceFormat()
-    fmt.setVersion(4, 1)  # PyQt6 espone solo le funzioni GL 2.x e 4.1 core
+    fmt.setVersion(4, 1)  # macOS dà la 4.1 solo se la chiedi; altrove si accetta anche meno (vedi gl_functions)
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
     fmt.setAlphaBufferSize(8)
     return fmt
 
 
+def gl_version(ctx):
+    fmt = ctx.format()
+    return fmt.majorVersion(), fmt.minorVersion()
+
+
 def gl_functions(ctx):
-    return QOpenGLVersionFunctionsFactory.get(QOpenGLVersionProfile(surface_format()), ctx)
+    """PyQt6 espone solo i profili GL 2.x e 4.1 core: sotto la 4.1 bastano le funzioni 2.0 (clear, viewport, draw)."""
+    if gl_version(ctx) >= (4, 1):
+        return QOpenGLVersionFunctionsFactory.get(QOpenGLVersionProfile(surface_format()), ctx)
+    prof = QOpenGLVersionProfile()
+    prof.setVersion(2, 0)
+    return QOpenGLVersionFunctionsFactory.get(prof, ctx)
 
 
-def build_program():
+def build_program(version=(4, 1)):
+    """Lo shader usa solo GLSL 1.30: con OpenGL 3.0-3.2 (vecchi driver, macchine virtuali) si compila come 130."""
+    head = "#version 330 core" if version >= (3, 3) else "#version 130"
     prog = QOpenGLShaderProgram()
-    ok = (prog.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Vertex, VERT)
-          and prog.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Fragment, FRAG.read_text())
+    ok = (prog.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Vertex, VERT.replace("#version 330 core", head))
+          and prog.addShaderFromSourceCode(QOpenGLShader.ShaderTypeBit.Fragment,
+                                           FRAG.read_text().replace("#version 330 core", head, 1))
           and prog.link())
     if not ok:
         raise RuntimeError("Shader non compilato:\n" + prog.log())
@@ -128,13 +141,13 @@ class SceneView(QOpenGLWidget):
             ctx = self.context()
             fmt = ctx.format() if ctx else None
             print("OpenGL:", fmt and f"{fmt.majorVersion()}.{fmt.minorVersion()}")
-            if fmt is None or (fmt.majorVersion(), fmt.minorVersion()) < (4, 1):
-                raise RuntimeError("OpenGL 4.1 non disponibile: il contesto è "
+            if fmt is None or (fmt.majorVersion(), fmt.minorVersion()) < (3, 0):
+                raise RuntimeError("Serve almeno OpenGL 3.0, il contesto è "
                                    + (f"{fmt.majorVersion()}.{fmt.minorVersion()}" if fmt else "assente"))
             self.gl = gl_functions(ctx)
             if self.gl is None:
-                raise RuntimeError("Funzioni OpenGL 4.1 core non disponibili")
-            self.prog = build_program()
+                raise RuntimeError(f"Funzioni OpenGL non disponibili nel contesto {gl_version(ctx)}")
+            self.prog = build_program(gl_version(ctx))
         except RuntimeError as e:
             self.error = str(e)
             print(self.error)

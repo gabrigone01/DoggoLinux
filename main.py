@@ -525,7 +525,7 @@ class Pet(QObject):
         broken = [v for v in (self.view, self.kennel) if v.prog is None]
         if not broken:
             return
-        err = broken[0].error or "OpenGL 4.1 non disponibile (scheda video o driver troppo vecchi?)"
+        err = broken[0].error or "OpenGL non disponibile (scheda video o driver troppo vecchi?)"
         print("Disegno non riuscito:", err)
         QMessageBox.warning(None, "Doggo", f"Non riesco a disegnare il cane.\n\n{err[:1500]}\n\n"
                             f"Dettagli in: {LOG_PATH}")

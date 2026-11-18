@@ -506,7 +506,7 @@ class ShaderTest(unittest.TestCase):
         surf.create()
         if not ctx.create() or not ctx.makeCurrent(surf):
             self.skipTest("OpenGL non disponibile")
-        prog = view3d.build_program()
+        prog = view3d.build_program(view3d.gl_version(ctx))
         vao = QOpenGLVertexArrayObject()
         vao.create()
         f = view3d.gl_functions(ctx)
@@ -523,6 +523,27 @@ class ShaderTest(unittest.TestCase):
         img = fbo.toImage()
         opaque = sum(img.pixelColor(x, y).alpha() == 255 for x in range(0, w, 3) for y in range(0, h, 3))
         self.assertGreater(opaque, 150)
+
+    def test_shader_works_with_opengl_3_0(self):
+        # PC con driver vecchi o macchine virtuali: contesto 3.0, GLSL 1.30, funzioni del profilo 2.0
+        import subprocess
+        code = (
+            "from PyQt6.QtGui import QGuiApplication, QOffscreenSurface, QOpenGLContext, QSurfaceFormat\n"
+            "import view3d\n"
+            "app = QGuiApplication([])\n"
+            "fmt = QSurfaceFormat(); fmt.setVersion(3, 0)\n"
+            "ctx = QOpenGLContext(); ctx.setFormat(fmt)\n"
+            "surf = QOffscreenSurface(); surf.setFormat(fmt); surf.create()\n"
+            "assert ctx.create() and ctx.makeCurrent(surf)\n"
+            "assert view3d.gl_version(ctx) == (3, 0), view3d.gl_version(ctx)\n"
+            "view3d.build_program(view3d.gl_version(ctx))\n"
+            "assert view3d.gl_functions(ctx) is not None\n")
+        env = dict(os.environ, MESA_GL_VERSION_OVERRIDE="3.0", MESA_GLSL_VERSION_OVERRIDE="130",
+                   QT_QPA_PLATFORM="offscreen")
+        r = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).parent, env=env, capture_output=True, text=True)
+        if "Could not create" in r.stderr or "ctx.create()" in r.stderr:
+            self.skipTest("OpenGL non disponibile")
+        self.assertEqual(r.returncode, 0, r.stderr[-2000:])
 
 
 if __name__ == "__main__":
