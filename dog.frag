@@ -100,6 +100,7 @@ float sdEar(vec3 q, int i) {
     return sdEllipsoid(vec3(u - L * 0.5, v, s / taper), vec3(L * 0.5, uEarDim.z, uEarDim.y)) * taper;
 }
 
+const float MOUTH_Y = -0.42, MOUTH_X = 0.06;  // linea della bocca e suo angolo (spazio della testa, in R)
 vec3 toHead(vec3 p) { return transpose(uHeadRot) * (p - uHeadPos); }
 // occhi a mandorla rivolti in avanti, verso il muso, come nei cani veri
 vec3 eyeC(float sg) { return vec3(0.63 * uHeadR, 0.2 * uHeadR, sg * 0.38 * uHeadR); }
@@ -157,11 +158,14 @@ vec2 mapDog(vec3 pw) {
     vec3 mq = vec3(q.x, q.y, q.z * 1.08);
     head = smin(head, sdRoundCone(mq, vec3(0.5 * R, -0.22 * R, 0.0), vec3(0.5 * R + M, -0.2 * R, 0.0), 0.42 * R, 0.25 * R), 0.38 * R);
     head = smin(head, sdEllipsoid(q - vec3(0.5 * R + M * 0.55, -0.42 * R, 0.0), vec3(M * 0.5, 0.17 * R, 0.36 * R)), 0.12 * R);
-    vec3 hinge = vec3(0.05 * R, -0.42 * R, 0.0);
-    float ja = uJaw * 0.65;
+    // muso e guance tagliati lungo la linea della bocca, dall'angolo sotto l'occhio fino al naso:
+    // sotto c'è solo la mascella, così quando si abbassa la bocca si apre per tutta la lunghezza
+    head = max(head, -max(max(q.y - MOUTH_Y * R, MOUTH_X * R - q.x), abs(q.z) - 0.4 * R));  // solo largo quanto il muso
+    vec3 hinge = vec3(0.0, -0.4 * R, 0.0);
+    float ja = uJaw * 0.7;
     vec3 jq = q - hinge;
     jq = vec3(cos(ja) * jq.x - sin(ja) * jq.y, sin(ja) * jq.x + cos(ja) * jq.y, jq.z) + hinge;
-    float jaw = sdRoundCone(jq, vec3(0.15 * R, -0.5 * R, 0.0), vec3(0.45 * R + M * 0.85, -0.5 * R, 0.0), 0.27 * R, 0.14 * R);
+    float jaw = sdRoundCone(jq, vec3(0.1 * R, -0.56 * R, 0.0), vec3(0.45 * R + M * 0.9, -0.53 * R, 0.0), 0.26 * R, 0.15 * R);
     // bocca chiusa: mento unito al muso; aperta: separati (k mai zero: smin dividerebbe per zero e la testa sparirebbe)
     head = smin(head, jaw, max(0.16 * R * (1.0 - uJaw * 4.0), 0.01));
     head -= uFur * (0.08 + 0.1 * (furN(q * 0.9) - 0.4));
@@ -182,13 +186,14 @@ vec2 mapDog(vec3 pw) {
         vec3 ec = eyeC(sg) * vec3(1.0, 1.0, mix(0.93, 1.0, uEyeOpen));
         res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.19, 0.12 * mix(0.25, 1.0, uEyeOpen), 0.21) * R), 6.0));
     }
-    if (uJaw > 0.03) {
-        vec3 mc = vec3(0.35 * R + uMuzzle * 0.45, -0.45 * R - uJaw * 0.12 * R, 0.0);
-        res = opU(res, vec2(sdEllipsoid(q - mc, vec3(uMuzzle * 0.55, 0.05 * R + uJaw * 0.22 * R, 0.3 * R)), 7.0));
+    if (uJaw > 0.03) {  // interno della bocca, lungo quanto il taglio
+        float mx0 = MOUTH_X * R, mx1 = 0.45 * R + uMuzzle;
+        vec3 mc = vec3((mx0 + mx1) * 0.5, MOUTH_Y * R - uJaw * 0.2 * R, 0.0);
+        res = opU(res, vec2(sdEllipsoid(q - mc, vec3((mx1 - mx0) * 0.5, 0.04 * R + uJaw * 0.24 * R, 0.22 * R)), 7.0));
     }
     if (uTongue > 0.03) {
         float tl = uMuzzle * (0.55 + 0.5 * uTongue);
-        vec3 tc = vec3(0.4 * R + uMuzzle * 0.35 + tl * 0.5, -0.52 * R - uJaw * 0.2 * R - uTongue * 0.25 * R, 0.0);
+        vec3 tc = vec3(0.3 * R + uMuzzle * 0.4 + tl * 0.5, MOUTH_Y * R - 0.08 * R - uJaw * 0.3 * R - uTongue * 0.1 * R, 0.0);
         float dr = -0.5 * uTongue;
         vec3 tq = q - tc;
         tq = vec3(cos(dr) * tq.x - sin(dr) * tq.y, sin(dr) * tq.x + cos(dr) * tq.y, tq.z);
@@ -385,9 +390,9 @@ vec3 dogAlbedo(vec3 pw, float m) {
     }
     if (m == 9.0) c = uPattern == 1 ? coat : mix(coat, coat2, 0.75);
     if (m == 4.0) {  // labbra nere lungo la bocca, dall'angolo fino al naso
-        float lip = smoothstep(0.1 * R, 0.03 * R, abs(q.y + 0.4 * R))
-                  * smoothstep(0.2 * R, 0.35 * R, q.x) * smoothstep(0.5 * R + uMuzzle * 1.05, 0.5 * R + uMuzzle * 0.8, q.x);
-        c = mix(c, vec3(0.05, 0.04, 0.04), 0.75 * lip);
+        float lip = smoothstep(0.07 * R, 0.02 * R, abs(q.y - MOUTH_Y * R)) * smoothstep(MOUTH_X * R, MOUTH_X * R + 0.12 * R, q.x)
+                  * smoothstep(0.42 * R, 0.32 * R, abs(q.z));
+        c = mix(c, vec3(0.05, 0.04, 0.04), 0.8 * lip);
     }
     if (uPattern == 0) {  // maremmano: avorio, sfumature biscotto attorno alle orecchie e nelle ciocche
         if (m == 4.0) c = mix(c, coat2, 0.45 * smoothstep(0.1 * R, -0.5 * R, q.x) * smoothstep(-0.1 * R, 0.4 * R, q.y));
