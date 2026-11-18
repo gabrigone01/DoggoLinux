@@ -178,12 +178,22 @@ def make(name, p):
     if name == "thud":
         src = [math.sin(2 * math.pi * 85 * i / RATE) for i in range(int(0.14 * RATE))]
         return envelope(mix((1.0, src), (0.4, lowpass(noise(0.14, rng), 0.08))), 0.002, 0.04)
+    if name == "chirp":  # cinguettio degli uccellini: fischi brevi che salgono
+        out = []
+        for k in range(rng.randint(3, 5)):
+            f0, dur = rng.uniform(3200, 4200), rng.uniform(0.05, 0.09)
+            n = int(dur * RATE)
+            tw = [math.sin(2 * math.pi * (f0 + 2500 * i / n) * i / RATE) for i in range(n)]
+            place(out, envelope(tw, 0.005, 0.03), k * 0.12)
+        return out
+    if name == "hiss":  # il gatto soffia
+        return envelope(bandpass(noise(0.7, rng), 4500, 0.7), 0.04, None, 0.25)
     raise KeyError(name)
 
 
 NAMES = ["bark", "yip", "whine", "howl", "growl", "pant", "yawn", "sniff", "lick", "shake", "scratch", "dig",
-         "crunch", "snore", "bounce", "clack", "thud"]
-VOLUME = dict(snore=0.5, sniff=0.7, lick=0.6, pant=0.7, bounce=0.8, clack=0.8, thud=0.9)
+         "crunch", "snore", "bounce", "clack", "thud", "chirp", "hiss"]
+VOLUME = dict(snore=0.5, sniff=0.7, lick=0.6, pant=0.7, bounce=0.8, clack=0.8, thud=0.9, chirp=0.5, hiss=0.7)
 
 
 def read_wav(path):

@@ -98,6 +98,7 @@ class BrainTest(unittest.TestCase):
         self.brain = Brain(self.dog, self.areas, random.Random(1))
         self.brain.set_home(1700, 2200, 1)
         self.brain.place_home()
+        self.brain.next_scene = 1e9  # niente scenette spontanee, tranne dove servono
 
     def run_until(self, cond, seconds=200):
         for _ in range(int(seconds * 30)):
@@ -293,6 +294,85 @@ class BrainTest(unittest.TestCase):
         self.brain.windows = list(self.WINDOWS)
         self.assertIsNone(self.brain.perch_spot())
         self.assertIsNone(self.brain.tug_plan())
+
+    def test_window_stays_on_screen_across_offset_screens(self):
+        # schermo in alto spostato e schermi sotto di altezza diversa: la finestra non deve mai uscire
+        areas = Areas([(0, 1080, 1920, 1200), (667, 0, 1920, 1080), (1920, 1080, 1920, 1080)])
+        for key in ("maremmano", "dachshund"):
+            brain = Brain(dog3d.Dog(key), areas, random.Random(3))
+            brain.set_home(3656, 2170, 1)  # cuccia in fondo allo schermo: il posto davanti resta dentro
+            self.assertTrue(brain.fits(*brain.home[:2]))
+            brain.place_home()
+            brain.choose, brain.next_scene = (lambda: None), 1e9
+            w, h = brain.dog.window_size()
+            for gx, gy in ((900, 500), (120, 2250), (2500, 600), (3700, 1200)):
+                brain.go(gx, gy)
+                brain.activity = "wander"
+                for _ in range(30 * 120):
+                    brain.update(1 / 30)
+                    corners = [(brain.x + sx * (w / 2 - 1), brain.y + dog3d.BASE - dy) for sx in (-1, 1) for dy in (1, h - 1)]
+                    self.assertTrue(all(areas.at(*c) is not None for c in corners), (key, gx, gy, brain.x, brain.y))
+                    if brain.goal is None:
+                        break
+                self.assertIsNone(brain.goal, (key, gx, gy))
+
+    def test_birds_and_cat_get_chased_away(self):
+        for kind in ("birds", "cat"):
+            self.brain.sfx = []
+            self.brain.scene(kind)
+            self.assertTrue(self.brain.critters)
+            self.assertTrue(self.run_until(lambda: not self.brain.critters and self.brain.activity != "guard", 90), kind)
+            self.assertIn("bark", self.brain.sfx)
+            self.assertIn("chirp" if kind == "birds" else "hiss", self.brain.sfx)
+
+    def test_chases_a_butterfly(self):
+        self.brain.scene("butterfly")
+        self.assertTrue(self.run_until(lambda: self.brain.phase == "play", 20))
+        self.assertTrue(self.run_until(lambda: not self.brain.critters and self.brain.activity != "flutter", 60))
+
+    def test_a_friend_comes_to_play_and_leaves(self):
+        self.brain.scene("friend")
+        friend = self.brain.friend
+        self.assertNotEqual(friend.dog.key, self.dog.key)
+        self.assertTrue(self.run_until(lambda: self.brain.phase == "romp", 60))
+        self.assertTrue(self.run_until(lambda: self.brain.friend is None, 200))
+        self.assertIsNone(self.areas.at(friend.x, friend.y))  # uscito dallo schermo
+        self.assertIsNotNone(self.areas.at(self.brain.x, self.brain.y))
+
+    def test_visitors_leave_if_you_pick_him_up(self):
+        self.brain.scene("cat")
+        self.brain.update(1 / 30)
+        self.brain.pick_up()
+        self.assertTrue(self.run_until(lambda: not self.brain.critters, 30))
+
+    def test_finds_things_and_plays_with_them(self):
+        for item, end in (("bone", "lie"), ("sock", "stand")):
+            self.brain.scene("find", item)
+            self.assertTrue(self.run_until(lambda: self.brain.activity == end, 120), item)
+            self.assertEqual(self.dog.carry, 0)
+            self.assertEqual(self.brain.toy.state, "rest")
+            self.brain.toy = None
+        self.brain.scene("find", "ball")
+        self.assertTrue(self.run_until(lambda: self.brain.activity == "play", 20))
+
+    def test_drinks_when_thirsty(self):
+        self.brain.water = (1500, 2000)
+        self.brain.thirst = 1.0
+        self.brain.choose = lambda: None
+        self.brain.go(1500 + self.brain.reach(), 2000)
+        self.brain.activity, self.brain.phase = "drink", "go"
+        self.assertTrue(self.run_until(lambda: self.brain.activity == "sit", 40))
+        self.assertLess(self.brain.thirst, 0.1)
+
+    def test_scenes_happen_on_their_own(self):
+        self.brain.bowl, self.brain.water = (1800, 2200), (1600, 2200)
+        self.brain.next_scene = 0.0
+        seen = set()
+        for _ in range(int(900 * 30)):
+            self.brain.update(1 / 30)
+            seen.add(self.brain.activity)
+            self.assertIsNotNone(self.areas.at(self.brain.x, self.brain.y))
+        self.assertTrue(seen & {"guard", "flutter", "friend", "find"})
 
     def test_autonomous_life_does_not_crash(self):
         self.brain.windows = list(self.WINDOWS)

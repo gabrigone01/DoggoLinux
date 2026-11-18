@@ -14,6 +14,10 @@ ACTION_SOUND = dict(bark="bark", whine="whine", yawn="yawn", happy="pant", sniff
 ACTIVITY_SOUND = dict(howl="howl", dig="dig", roll="pant", shake="shake", scratch="scratch", stretch="yawn",
                       petted="pant", givepaw="yip", bellyrub="pant")
 TOWARD_CAMERA = (0.0, math.sin(dog3d.ELEVATION), math.cos(dog3d.ELEVATION))
+# scenette che capitano da sole ogni tanto, perché non si annoi (pesi)
+SCENES = dict(birds=5, cat=3, butterfly=4, friend=3, find=6)
+CALM = {"stand", "sit", "lie", "wander", "sniff", "sniffing", "sleep", "scratch", "stretch", "shake", "home"}
+VISITS = ("guard", "flutter", "friend", "visit")
 
 
 class Areas:
@@ -86,7 +90,7 @@ class Toy:
     def __init__(self, kind, x, y, h=0.0, vx=0.0, vy=0.0, vh=0.0):
         self.kind, self.x, self.y, self.h = kind, x, y, h
         self.vx, self.vy, self.vh = vx, vy, vh
-        self.angle, self.spin = 0.0, (9.0 if kind == "stick" else 0.0)
+        self.angle, self.spin = 0.0, dict(stick=9.0, bone=6.0, sock=5.0).get(kind, 0.0)
         self.state = "flying"   # flying, rest, carried
         self.idle = 0.0
         self.events = []        # rimbalzi da far sentire
@@ -107,7 +111,7 @@ class Toy:
         self.angle += self.spin * dt
         if self.h <= 0:
             self.h = 0.0
-            if self.vh < -150:
+            if self.vh < -150 and self.kind != "sock":
                 self.events.append("bounce" if self.kind == "ball" else "clack")
             if self.kind == "ball" and self.vh < -150:
                 self.vh = -self.vh * 0.5
@@ -122,6 +126,78 @@ class Toy:
                 if math.hypot(self.vx, self.vy) < 6:
                     self.vx = self.vy = 0.0
                     self.state = "rest"
+
+
+class Critter:
+    """Visita disegnata da main: uccellino, gatto o farfalla. (x, y) è il punto a terra, h l'altezza in volo."""
+    SPEED = dict(bird=(170, 40), cat=(75, 0), butterfly=(90, 55))  # (arrivo, a spasso)
+
+    def __init__(self, kind, x, y, tx, ty, h=0.0, rng=None):
+        self.kind, self.x, self.y, self.h, self.tx, self.ty = kind, x, y, h, tx, ty
+        self.state = "arrive"   # arrive, stay, scared, flee, gone
+        self.face = 1 if tx >= x else -1
+        self.t = (rng or random).uniform(0, 10)
+        self.wait = 0.0
+        self.vx = self.vy = self.vh = 0.0
+        self.color = (rng or random).randrange(3)  # variante di colore
+        self.events = []
+
+    def scare(self, from_x, rng):
+        """Il cane arriva: scappa dalla parte opposta (il gatto prima soffia)."""
+        if self.state in ("scared", "flee", "gone"):
+            return
+        side = 1 if self.x >= from_x else -1
+        self.face = side
+        if self.kind == "cat":
+            self.state, self.wait, self.vx = "scared", 0.6, side * 330.0
+            self.events.append("hiss")
+        elif self.kind == "bird":
+            self.state = "flee"
+            self.vx, self.vy, self.vh = side * rng.uniform(220, 320), rng.uniform(-60, 0), rng.uniform(180, 260)
+            self.events.append("chirp")
+        else:
+            self.state, self.vx, self.vy, self.vh = "flee", side * 50.0, -20.0, 90.0
+
+    def step(self, dt, rng, areas):
+        self.t += dt
+        if self.state == "scared":
+            self.wait -= dt
+            if self.wait <= 0:
+                self.state = "flee"
+            return
+        if self.state == "flee":
+            self.x, self.y, self.h = self.x + self.vx * dt, self.y + self.vy * dt, self.h + self.vh * dt
+            if self.kind == "bird":
+                self.vh += 120 * dt
+            if areas.at(self.x, self.y - self.h) is None:  # uscito dagli schermi
+                self.state = "gone"
+            return
+        dx, dy = self.tx - self.x, self.ty - self.y
+        d = math.hypot(dx, dy)
+        v = self.SPEED[self.kind][0 if self.state == "arrive" else 1]
+        if d > 1 and v:
+            k = min(1.0, v * dt / d)
+            self.x, self.y = self.x + dx * k, self.y + dy * k
+            if abs(dx) > 1:
+                self.face = 1 if dx > 0 else -1
+        if self.kind == "bird":  # plana fino a terra, poi saltella
+            self.h = min(self.h, d * 0.6) if self.state == "arrive" else (abs(math.sin(self.t * 14)) * 3 if d > 1 else 0.0)
+        elif self.kind == "butterfly":
+            self.h = 45 + 18 * math.sin(self.t * 1.8)
+        if self.state == "arrive" and d <= 1:
+            self.state = "stay"
+            if self.kind == "bird":
+                self.events.append("chirp")
+        if self.state == "stay" and self.kind != "cat":
+            self.wait -= dt
+            if self.kind == "bird" and rng.random() < dt * 0.15:
+                self.events.append("chirp")
+            if self.wait <= 0:
+                r = 18 if self.kind == "bird" else 110
+                tx, ty = self.x + rng.uniform(-r, r), self.y + rng.uniform(-r, r) * 0.5
+                if areas.at(tx, ty) is not None:
+                    self.tx, self.ty = tx, ty
+                self.wait = rng.uniform(0.6, 2.0)
 
 
 class Brain:
@@ -162,6 +238,14 @@ class Brain:
         self.sfx = []                   # versi da suonare (li suona main)
         self.next_bark = 90.0
         self.next_noise = 0.0
+        self.water = None               # (x, y) della ciotola dell'acqua
+        self.thirst = 0.0
+        self.critters = []              # visite: uccellini, gatto, farfalla
+        self.friend = None              # cane amico in visita (un altro Brain)
+        self.friend_leaving = False
+        self.focus = None               # (x, y, h) di chi sta guardando nella scenetta
+        self.next_scene = 40.0
+        self.next_jump = 0.0
 
     # ------------------------------------------------------------ comandi esterni
     @property
@@ -169,7 +253,9 @@ class Brain:
         return self.y
 
     def set_home(self, x, y, side):
-        self.home = (x, y, side)
+        i = self.areas.at(x, y - 1)
+        i = self.areas.nearest(x, y) if i is None else i
+        self.home = (*self.areas.clamp(i, x, y, *self.margins()), side)  # davanti alla cuccia ma dentro lo schermo
 
     def place_home(self):
         self.x, self.y = self.home[0], self.home[1]
@@ -221,8 +307,8 @@ class Brain:
         self.sfx.append("yip")
         self.goal = self.perch = self.leap = None
         self.dog.carry = 0
-        if self.activity in ("fetch", "play"):
-            self.toy = None if self.activity == "play" else self.toy
+        if self.activity in ("fetch", "play", "find"):
+            self.toy = None if self.activity in ("play", "find") else self.toy
         self.activity, self.timer, self.phase = "held", 1e9, None
 
     def hold_at(self, gx, gy):
@@ -253,7 +339,7 @@ class Brain:
             self.toy.step(dt, self.areas)
             self.sfx += self.toy.events
             self.toy.events = []
-            if self.toy.state == "rest" and self.activity not in ("fetch", "play"):
+            if self.toy.state == "rest" and self.activity not in ("fetch", "play", "find"):
                 self.toy.idle += dt
                 if self.toy.idle > 25:
                     self.toy = None  # dopo un po' il gioco abbandonato sparisce
@@ -262,6 +348,8 @@ class Brain:
             if self.activity not in ("sleep", "held", "eat") and not self.listening:
                 self.perform(["bark"])
         self.food = min(1.0, self.food + dt / 900)  # la ciotola si riempie piano piano
+        self.thirst = min(1.0, self.thirst + dt / (40 if self.goal and self.run else 900))  # correre mette sete
+        self.visitors(dt)
         dog = self.dog
         T = dict(dog3d.POSE_DEFAULTS)
         if self.held:  # in braccio: zampe penzoloni, coda giù che scodinzola, ti guarda
@@ -313,7 +401,8 @@ class Brain:
         options = [("wander", 26), ("stand", 12), ("sit", 10), ("lie", 7), ("sniff", 10), ("scratch", 4),
                    ("stretch", 4), ("shake", 3), ("spin", 2 + 3 * ind), ("home", 5), ("explore", 5 + 5 * ind),
                    ("eat", 5 * self.food), ("play", 6), ("dig", 4), ("howl", 1.5), ("roll", 3), ("zoom", 3),
-                   ("hop", 2), ("perch", 6 if self.perch_spot() else 0), ("tug", 4 if self.tug_plan() else 0)]
+                   ("hop", 2), ("perch", 6 if self.perch_spot() else 0), ("tug", 4 if self.tug_plan() else 0),
+                   ("drink", 2 + 12 * self.thirst if self.water else 0)]
         r = self.rng.uniform(0, sum(w for _, w in options))
         for name, w in options:
             r -= w
@@ -329,13 +418,13 @@ class Brain:
             self.activity, self.timer = "wander", 60.0
         elif name == "home":
             self.go_home()
-        elif name == "eat" and self.bowl:
-            bx, by = self.bowl
+        elif name in ("eat", "drink") and self.bowl:
+            bx, by = self.bowl if name == "eat" else self.water
             i = self.areas.nearest(bx, by)
             mx = self.dog.window_size()[0] / 2
             right = bx + self.reach() + mx <= self.areas.rects[i][0] + self.areas.rects[i][2]
             self.go(bx + self.reach() if right else bx - self.reach(), by)
-            self.activity, self.timer, self.phase = "eat", 60.0, "go"
+            self.activity, self.timer, self.phase = name, 60.0, "go"
         elif name == "play" and self.home:
             hx, hy, side = self.home
             a = math.pi + self.rng.uniform(-1.0, 1.0) if side > 0 else self.rng.uniform(-1.0, 1.0)
@@ -375,8 +464,11 @@ class Brain:
         self.timer -= dt
         # di base è un cane contento: bocca socchiusa con la lingua, coda su che scodinzola piano
         T.update(tailUp=0.35, wagAmp=0.28, wagFreq=3.5, jaw=self.dog.b.get("smile", 0.3), tongue=0.6, ears=0.15)
-        if a in ("fetch", "play", "eat", "zoom"):
+        if a in ("fetch", "play", "eat", "drink", "zoom"):
             self.games(dt, T)
+            a = self.activity
+        if a in ("guard", "flutter", "friend", "find"):
+            self.scenes(dt, T)
             a = self.activity
         if a in ("perch", "tug"):
             self.window_games(dt, T)
@@ -480,6 +572,21 @@ class Brain:
                 else:
                     self.zoom_next()
             return
+        if a == "drink":  # lappa l'acqua con la lingua
+            if ph == "go" and self.goal is None:
+                self.face(*self.water)
+                self.phase, self.phase_t = "eating", 0.0
+            elif ph == "eating":
+                if self.t > self.next_noise:
+                    self.next_noise = self.t + 0.8
+                    self.sfx.append("lick")
+                T.update(headPitch=0.95, jaw=0.35, tongue=1.0 if (self.t * 5) % 1.0 < 0.5 else 0.3, ears=0.1,
+                         tailUp=0.5, wagAmp=0.35, wagFreq=3.0)
+                self.thirst = 0.0
+                if self.phase_t > 6:
+                    self.perform(["lick", "wag"])
+                    self.start("sit", 4.0)
+            return
         if a == "eat":
             if ph == "go" and self.goal is None:
                 self.face(*self.bowl)
@@ -539,16 +646,330 @@ class Brain:
                     self.toy = None  # la rimette in cuccia
                     self.start("lie", self.rng.uniform(6, 12))
                 else:
-                    toy.state, toy.h, toy.vx, toy.vy, toy.vh = "rest", 0.0, 0.0, 0.0, 0.0
-                    toy.x = self.x + math.cos(self.dog.yaw) * self.reach()
-                    toy.y = self.y + math.sin(self.dog.yaw) * self.reach() * 0.5
-                    toy.idle = 0.0
+                    self.drop_toy()
                     self.sfx.append("pant")
                     self.start("attend", 7.0)  # seduto, ti guarda: "ancora!"
                     self.perform(["wag"])
         # mentre gioca segue la pallina con lo sguardo
         if ph in ("watch", "chase") and toy.state != "carried":
             self.gaze, self.gaze_timer = "toy", 0.5
+
+    def drop_toy(self):
+        """Lascia il giocattolo a terra davanti al muso."""
+        toy, self.dog.carry = self.toy, 0
+        toy.state, toy.h, toy.vx, toy.vy, toy.vh = "rest", 0.0, 0.0, 0.0, 0.0
+        toy.x = self.x + math.cos(self.dog.yaw) * self.reach()
+        toy.y = self.y + math.sin(self.dog.yaw) * self.reach() * 0.5
+        toy.idle = 0.0
+
+    # ------------------------------------------------------------ scenette
+    def visitors(self, dt):
+        """Visite e amico vanno avanti da soli; se il cane fa altro, se ne vanno."""
+        if self.t > self.next_scene:
+            self.next_scene = self.t + self.rng.uniform(50, 140)
+            if (self.activity in CALM and not (self.listening or self.held or self.toy or self.critters
+                                                or self.friend or self.perch)):
+                self.scene()
+        for c in self.critters:
+            c.step(dt, self.rng, self.areas)
+            self.sfx += c.events
+            c.events = []
+            if self.activity not in ("guard", "flutter"):
+                c.scare(self.x, self.rng)
+        self.critters = [c for c in self.critters if c.state != "gone"]
+        f = self.friend
+        if f:
+            f.update(dt)
+            self.sfx += f.sfx
+            f.sfx = []
+            if self.activity != "friend" and not self.friend_leaving:
+                self.send_friend_away()
+            if self.friend_leaving and f.goal is None:
+                self.friend = None
+
+    def spot_away(self, i, far=260):
+        """Punto libero sullo schermo i, non troppo vicino al cane."""
+        for _ in range(30):
+            p = self.random_point(i)
+            if math.hypot(p[0] - self.x, p[1] - self.y) >= far:
+                break
+        return p
+
+    def exits(self, x, y):
+        """Punti appena fuori dagli schermi a sinistra e a destra di (x, y), dal più vicino."""
+        rx, ry, rw, rh = self.areas.rects[self.areas.nearest(x, y)]
+        out = [p for p in ((rx - 70, y), (rx + rw + 70, y)) if self.areas.at(*p) is None]
+        return sorted(out, key=lambda p: abs(p[0] - x))
+
+    def scene(self, kind=None, item=None):
+        """Comincia una scenetta: visita di uccellini, gatto, farfalla o di un cane amico, oppure trova qualcosa."""
+        if kind is None:
+            kind = self.rng.choices(list(SCENES), weights=list(SCENES.values()))[0]
+        i = self.here()
+        if kind == "friend" and not self.exits(self.x, self.y):
+            kind = "find"  # schermi attaccati a destra e sinistra: l'amico non saprebbe da dove arrivare
+        if self.activity == "sleep":
+            self.perform(["yawn"])
+        self.goal, self.focus, self.phase, self.phase_t = None, None, "notice", 0.0
+        rng = self.rng
+        if kind in ("birds", "cat", "butterfly"):
+            tx, ty = self.spot_away(i)
+            rx, ry, rw, rh = self.areas.rects[i]
+            side = rng.choice((-1, 1))
+            ex = rx - 40 if side < 0 else rx + rw + 40
+            if kind == "birds":
+                for _ in range(rng.randint(2, 4)):
+                    gx, gy = self.areas.clamp(i, tx + rng.uniform(-50, 50), ty + rng.uniform(-25, 25))
+                    self.critters.append(Critter("bird", ex, gy, gx, gy, rng.uniform(220, 320), rng))
+            else:
+                self.critters.append(Critter(kind, ex, ty, tx, ty, 45.0 if kind == "butterfly" else 0.0, rng))
+            self.activity, self.timer = ("flutter", rng.uniform(16, 24)) if kind == "butterfly" else ("guard", 60.0)
+            self.perform(["ears_up", "tilt"] if kind == "butterfly" else ["ears_up"])
+        elif kind == "friend":
+            ex, ey = self.exits(self.x, self.y)[0]
+            f = self.friend = Brain(dog3d.Dog(rng.choice([k for k in dog3d.BREEDS if k != self.dog.key])), self.areas, rng)
+            f.x, f.y = ex, ey
+            f.choose = lambda: None  # lo guida questa scenetta
+            f.next_scene = f.next_bark = 1e9
+            f.activity, f.timer = "visit", 1e9
+            side = 1 if ex > self.x else -1
+            f.go(self.x + side * 80, self.y + 8)
+            self.friend_leaving = False
+            self.activity, self.timer = "friend", 120.0
+            self.perform(["ears_up", "wag"])
+        else:
+            x, y = self.spot_away(i, 200)
+            self.toy = Toy(item or rng.choice(["bone", "sock", "ball"]), x, y)
+            self.toy.state = "rest"
+            self.dog.carry = 0
+            self.activity, self.timer, self.count = "find", 90.0, rng.randint(2, 3)
+            self.perform(["ears_up", "tilt"])
+
+    def send_friend_away(self):
+        f = self.friend
+        out = self.exits(f.x, f.y)
+        rx, ry, rw, rh = self.areas.rects[self.areas.nearest(f.x, f.y)]
+        f.goal = out[0] if out else (f.x, ry + rh + 150)  # dritto fuori dallo schermo, senza restare dentro
+        f.run, f.focus, f.activity = False, None, "visit"
+        self.friend_leaving = True
+
+    def scenes(self, dt, T):
+        a, ph = self.activity, self.phase
+        self.phase_t = getattr(self, "phase_t", 0.0) + dt
+        if self.timer <= 0:  # rete di sicurezza: le visite se ne vanno da sole
+            self.start("stand", 2.0)
+            return
+        if a in ("guard", "flutter"):
+            self.guard(T, ph)
+        elif a == "friend":
+            self.play_friend(T, ph)
+        else:
+            self.found(T, ph)
+
+    def guard(self, T, ph):
+        """Uccellini o gatto: fa la guardia e li manda via. Farfalla: la rincorre saltando."""
+        live = [c for c in self.critters if c.state in ("arrive", "stay")]
+        lead = live[0] if live else (self.critters[0] if self.critters else None)
+        if lead is None:  # spariti tutti: soddisfatto
+            self.perform(["wag", "happy"])
+            self.start("stand", 2.0)
+            return
+        self.focus, self.gaze, self.gaze_timer = (lead.x, lead.y, lead.h), "guest", 0.5
+        dist = math.hypot(lead.x - self.x, lead.y - self.y)
+        cat = lead.kind == "cat"
+        if self.activity == "flutter":
+            T.update(ears=0.9, tailUp=0.7, wagAmp=0.5, wagFreq=4.0)
+            if ph == "notice":
+                self.face(lead.x, lead.y)
+                if self.phase_t > 1.2:
+                    self.phase, self.phase_t = "play", 0.0
+            elif ph == "play":
+                if self.phase_t > 0.6:  # la insegue di trotto, cambiando direzione con lei
+                    self.go(lead.x - 30 * lead.face, lead.y + 10, run="trot")
+                    self.phase_t = 0.0
+                if dist < 80 and self.t > self.next_jump:
+                    self.next_jump = self.t + self.rng.uniform(1.2, 2.5)
+                    self.perform(["jump"])
+                if self.timer < 4:
+                    lead.scare(self.x, self.rng)
+                    self.goal, self.phase = None, "watch"
+            else:  # seduto, la guarda volare via
+                T.update(rear=1.0, headRoll=0.3, ears=0.8)
+            return
+        if ph == "notice":  # si blocca: orecchie dritte, coda alta e ferma
+            self.face(lead.x, lead.y)
+            T.update(ears=1.0, tailUp=0.8, wagAmp=0.05, front=0.15, jaw=0.0, tongue=0.0)
+            if self.phase_t > 1.5 and lead.state == "stay":
+                self.phase, self.phase_t = ("standoff" if cat else "stalk"), 0.0
+        elif ph == "stalk":  # agli uccellini si avvicina di soppiatto
+            T.update(front=0.3, headPitch=0.15, ears=1.0, tailUp=0.3, wagAmp=0.0, jaw=0.0, tongue=0.0)
+            self.go(lead.x, lead.y)
+            if dist < 230 or self.phase_t > 8:
+                self.phase, self.phase_t = "charge", 0.0
+                self.perform(["bark"])
+        elif ph == "standoff":  # al gatto ringhia e abbaia da lontano, poi carica
+            T.update(ears=1.0, tailUp=0.9, wagAmp=0.0, front=0.1, jaw=0.15, tongue=0.0)
+            if self.phase_t < 0.05:
+                self.sfx.append("growl")
+                self.perform(["bark", "bark"])
+            if self.phase_t > 3.5:
+                self.phase, self.phase_t = "charge", 0.0
+        elif ph == "charge":
+            T.update(ears=0.6, tailUp=0.8, jaw=0.5, tongue=0.3, breath=2.0)
+            if live:
+                self.go(lead.x, lead.y, run=True)
+                if dist < (240 if cat else 170):
+                    for c in self.critters:
+                        c.scare(self.x, self.rng)
+            else:  # scappati: frena e abbaia dietro
+                self.go(self.x + math.cos(self.dog.yaw) * 40, self.y + math.sin(self.dog.yaw) * 20, run=True)
+                self.perform(["bark"])
+                self.phase, self.phase_t = "proud", 0.0
+        else:  # fiero, li guarda andare via
+            T.update(ears=0.9, tailUp=0.9, wagAmp=0.4, wagFreq=4.0)
+
+    def play_friend(self, T, ph):
+        """Arriva un amico: si annusano, si inchinano e si rincorrono a turno, poi un riposino e ciao."""
+        f = self.friend
+        if f is None:
+            self.perform(["whine"] if ph == "bye" else ["wag"])
+            self.start("sit", 4.0)
+            return
+        self.focus, self.gaze, self.gaze_timer = (f.x, f.y, 0.0), "guest", 0.5
+        if not self.friend_leaving:
+            f.focus, f.gaze, f.gaze_timer = (self.x, self.y, 0.0), "guest", 0.5
+        if ph == "notice":
+            T.update(ears=1.0, tailUp=0.8, wagAmp=0.6, wagFreq=8)
+            self.face(f.x, f.y)
+            if f.goal is None:
+                f.face(self.x, self.y)
+                for d in (self, f):
+                    d.perform(["sniff", "wag"])
+                self.phase, self.phase_t = "greet", 0.0
+        elif ph == "greet":
+            T.update(wagAmp=0.6, wagFreq=8, tailUp=0.8)
+            if self.phase_t > 3.5:
+                self.phase, self.phase_t, self.count = "romp", 0.0, self.rng.randint(4, 7)
+                self.leader, self.romping = self.rng.choice([self, f]), False
+                for d in (self, f):
+                    d.perform(["bow"])
+        elif ph == "romp":
+            T.update(jaw=0.5, tongue=0.8, breath=2.0, tailUp=0.6, wagAmp=0.5)
+            lead = self.leader
+            chaser = f if lead is self else self
+            if self.phase_t > 1.6 and lead.goal is None:
+                if self.romping:  # preso! si scambiano: ora scappa l'altro
+                    self.count -= 1
+                    self.leader, self.romping, self.phase_t = chaser, False, 0.0
+                    chaser.goal = None
+                    for d in (self, f):
+                        d.perform(["bow"])
+                    if self.count <= 0:
+                        self.phase = "rest"
+                        f.activity = "lie"
+                else:
+                    for _ in range(10):  # scappa da qualche parte non troppo lontano
+                        p = self.random_point(self.here())
+                        if math.hypot(p[0] - lead.x, p[1] - lead.y) < 600:
+                            break
+                    lead.go(*p, run=True)
+                    self.romping = True
+            if self.romping and math.hypot(chaser.x - lead.x, chaser.y - lead.y) > 70:
+                side = 1 if chaser.x > lead.x else -1
+                chaser.go(lead.x + side * 55, lead.y, run=True)
+        elif ph == "rest":
+            T.update(front=1.0, rear=1.0, jaw=0.5, tongue=0.8, breath=2.0, wagAmp=0.2)
+            if self.phase_t > 7:
+                f.activity = "visit"
+                self.send_friend_away()
+                self.phase = "bye"
+        else:  # seduto, lo guarda andare via
+            T.update(rear=1.0, ears=0.4, wagAmp=0.3)
+
+    def found(self, T, ph):
+        """Ha trovato qualcosa in giro: osso da rosicchiare in cuccia, calzino da scuotere e lanciare, pallina."""
+        toy = self.toy
+        if toy is None:
+            self.start("stand", 2.0)
+            return
+        if ph in ("notice", "fetch") and toy.state != "carried":
+            self.gaze, self.gaze_timer = "toy", 0.5
+        if ph == "notice":
+            self.face(toy.x, toy.y)
+            T.update(ears=1.0, tailUp=0.7)
+            if self.phase_t > 1.2:
+                dx, dy = self.x - toy.x, self.y - toy.y
+                n = math.hypot(dx, dy) or 1.0
+                self.go(toy.x + dx / n * self.reach(), toy.y + dy / n * self.reach() * 0.5)
+                self.phase, self.phase_t = "go", 0.0
+        elif ph == "go" and self.goal is None:
+            self.face(toy.x, toy.y)
+            self.sfx.append("sniff")
+            self.phase, self.phase_t = "sniff", 0.0
+        elif ph == "sniff":
+            T.update(headPitch=0.9, headYaw=0.2 * math.sin(self.t * 6), jaw=0.0, tongue=0.0, ears=0.4)
+            if self.phase_t > 1.6:
+                if toy.kind == "ball":  # una pallina! ci gioca come con quella della cuccia
+                    self.origin = self.home[:2]
+                    self.activity, self.phase, self.count = "play", "chase", self.rng.randint(2, 4)
+                    self.perform(["bow"])
+                else:
+                    self.phase, self.phase_t = "pick", 0.0
+        elif ph == "pick":
+            T.update(headPitch=0.95, jaw=0.3, tongue=0.0, ears=0.5, tailUp=0.7, wagAmp=0.5, wagFreq=4.0)
+            if self.phase_t > 0.45:
+                toy.state = "carried"
+                self.dog.carry = 3 if toy.kind == "bone" else 4
+                if toy.kind == "bone":
+                    self.go(self.home[0], self.home[1], run="trot")
+                    self.phase = "carry"
+                else:
+                    self.phase = "shake"
+                self.phase_t = 0.0
+        elif ph == "carry":  # se lo porta in cuccia, tutto fiero
+            T.update(jaw=0.28, tongue=0.0, tailUp=0.75, wagAmp=0.5, wagFreq=4.0, ears=0.4)
+            if self.goal is None:
+                self.dog.yaw_target = nearest_angle(self.dog.yaw, math.pi / 2 - 0.5 * self.home[2])
+                self.phase, self.phase_t, self.gnaw_for = "gnaw", 0.0, self.rng.uniform(12, 20)
+        elif ph == "gnaw":  # sdraiato, lo rosicchia tenendolo di traverso
+            T.update(front=1.0, rear=1.0, headPitch=0.45, headRoll=0.25 * math.sin(self.t * 2), eyes=0.6, tongue=0.0,
+                     jaw=0.25 * max(0.0, math.sin(self.t * 7)), wagAmp=0.3, wagFreq=3.0)
+            if self.t > self.next_noise:
+                self.next_noise = self.t + 1.6
+                self.sfx.append("crunch")
+            if self.phase_t > self.gnaw_for:
+                self.drop_toy()
+                self.perform(["lick"])
+                self.start("lie", self.rng.uniform(6, 12))
+        elif ph == "shake":  # scuote il calzino a destra e sinistra ringhiando per gioco
+            T.update(headYaw=0.7 * math.sin(self.t * 20), ears=-0.3, jaw=0.25, tongue=0.0, tailUp=0.8,
+                     wagAmp=0.6, wagFreq=4.0)
+            if self.phase_t < 0.05:
+                self.sfx.append("growl")
+            if self.phase_t > 1.3:
+                if self.count <= 0:
+                    self.drop_toy()
+                    self.perform(["happy"])
+                    self.start("stand", 2.0)
+                    return
+                self.count -= 1  # lo lancia in aria e lo riacchiappa
+                _, hy = self.head_screen()
+                toy.x = self.x + math.cos(self.dog.yaw) * self.reach()
+                toy.y = self.y + math.sin(self.dog.yaw) * self.reach() * 0.5
+                toy.h, toy.state = max(self.y - hy, 0.0), "flying"
+                toy.vx, toy.vy, toy.vh = self.rng.uniform(-140, 140), self.rng.uniform(-50, 50), self.rng.uniform(260, 360)
+                self.dog.carry = 0
+                self.sfx.append("yip")
+                self.phase, self.phase_t = "fetch", 0.0
+        elif ph == "fetch":
+            T.update(jaw=0.45, tongue=0.6, ears=0.3, tailUp=0.6, breath=2.0)
+            if toy.state == "rest":
+                self.chase_toy()
+                if self.goal is not None and math.hypot(self.goal[0] - self.x, self.goal[1] - self.y) < 2:
+                    self.goal = None
+                if self.goal is None:
+                    self.face(toy.x, toy.y)
+                    self.phase, self.phase_t = "pick", 0.0
 
     # ------------------------------------------------------------ finestre
     def window_at(self, x, y):
@@ -782,7 +1203,9 @@ class Brain:
         moving_cursor = self.t - self.cursor_moved_at < 1.2
         if self.listening or self.activity in ("attend", "petted", "givepaw", "bellyrub"):
             self.gaze = "camera"
-        elif self.gaze == "toy" and self.toy and self.activity in ("fetch", "play"):
+        elif self.gaze == "toy" and self.toy and self.activity in ("fetch", "play", "find"):
+            pass
+        elif self.gaze == "guest" and self.focus and self.activity in VISITS:
             pass
         elif self.gaze_timer <= 0:
             ind = self.dog.b["independence"]
@@ -809,6 +1232,9 @@ class Brain:
             d = (self.cursor[0] - hx, hy - self.cursor[1], 90.0)
         elif self.gaze == "toy" and self.toy:
             d = (self.toy.x - hx, hy - (self.toy.y - self.toy.h), 25.0 + (self.toy.y - self.y))
+        elif self.gaze == "guest" and self.focus:
+            fx, fy, fh = self.focus
+            d = (fx - hx, hy - (fy - fh), 25.0 + (fy - self.y))
         elif self.gaze == "around":
             d = dog3d.mat_vec(rig["body_rot"], self.gaze_dir)
         else:
@@ -853,25 +1279,44 @@ class Brain:
         self.goal = self.areas.clamp(i, x, y, *self.margins())
         self.run = run
 
+    def fits(self, x, y):
+        """La finestra del cane sta tutta dentro uno schermo."""
+        m = self.margins()
+        return any(self.areas.clamp(i, x, y, *m) == (x, y) for i in range(len(self.areas)))
+
     def straight(self, x, y):
         n = max(int(math.hypot(x - self.x, y - self.y) / 30), 1)
-        return all(self.areas.at(lerp(self.x, x, k / n), lerp(self.y, y, k / n)) is not None for k in range(n + 1))
+        return all(self.fits(lerp(self.x, x, k / n), lerp(self.y, y, k / n)) for k in range(n + 1))
 
     def waypoint(self):
         """Prossimo punto verso la meta: dritto se si può, altrimenti dal bordo in comune con lo schermo dopo."""
         gx, gy = self.goal
+        was_crossing, self.crossing = getattr(self, "crossing", False), False
         if self.straight(gx, gy):
             return gx, gy, True
         cur, dst = self.here(), self.areas.nearest(gx, gy)
         path = self.areas.route(cur, dst) if cur != dst else None
         if not path:
+            cx, cy = self.areas.clamp(cur, self.x, self.y, *self.margins())
+            # appena passato di schermo: prima ci entra del tutto (non l'amico che esce apposta dallo schermo)
+            if math.hypot(cx - self.x, cy - self.y) > 0.5 and self.fits(gx, gy):
+                return cx, cy, False
             return gx, gy, True
+        # passa nel tratto di bordo in comune lontano dagli angoli quanto basta perché la finestra stia in entrambi
+        # gli schermi; prima si mette in fila davanti al passaggio, poi lo attraversa dritto
         (x0, y0), (x1, y1), (nx, ny) = self.areas.edge(cur, path[1])
-        inset = 50
+        mx, top, bottom = self.margins()
         if x0 == x1:  # bordo verticale
-            px, py = x0, min(max(gy, y0 + inset), y1 - inset)
+            lo, hi = y0 + top, y1 - bottom
+            px, py = x0, min(max(gy, lo), hi) if lo <= hi else (y0 + y1) / 2
+            pre, lined_up = (px - nx * (mx + 2), py), abs(self.y - py) < 1
         else:
-            px, py = min(max(gx, x0 + inset), x1 - inset), y0
+            lo, hi = x0 + mx, x1 - mx
+            px, py = min(max(gx, lo), hi) if lo <= hi else (x0 + x1) / 2, y0
+            pre, lined_up = (px, py - ny * ((bottom if ny > 0 else top) + 2)), abs(self.x - px) < 1
+        if not (lined_up or was_crossing):  # una volta partito finisce il passaggio, anche se la meta si sposta
+            return pre[0], pre[1], False
+        self.crossing = True
         return px + nx * 20, py + ny * 20, False
 
     def move(self, dt):
@@ -881,10 +1326,12 @@ class Brain:
         dx, dy = wx - self.x, wy - self.y
         dist = math.hypot(dx, dy)
         hx, hy = (dx / dist, dy / dist) if dist > 0.5 else (0.0, 0.0)
-        if abs(dy) > abs(dx) * 0.84 and abs(dy) > 25:  # quasi in verticale: zig-zag in diagonale (~35°)
-            if (self.x - wx) * self.zig > max(30.0, abs(dy) * 0.35) or self.areas.at(self.x + self.zig * 40, self.y) is None:
+        if abs(dy) > abs(dx) * 0.84 and abs(dy) > 25 and not self.crossing:  # quasi in verticale: zig-zag (~35°)
+            lim = max(30.0, abs(dy) * 0.35)
+            if (self.x - wx) * self.zig > lim or not self.fits(self.x + self.zig * 40, self.y):
                 self.zig = -self.zig
-            hx, hy = self.zig * 0.82, math.copysign(0.57, dy)
+            if (self.x - wx) * self.zig <= lim + 1 and self.fits(self.x + self.zig * 40, self.y):
+                hx, hy = self.zig * 0.82, math.copysign(0.57, dy)  # senza spazio da nessun lato va dritto
         if dist > 0.5:
             self.dog.yaw_target = nearest_angle(self.dog.yaw, math.atan2(hy, hx))  # giù sullo schermo = verso di te
         facing = max(0.0, math.cos(self.dog.yaw - self.dog.yaw_target))
@@ -895,7 +1342,7 @@ class Brain:
         elif self.run:  # rincorre, corre a casa: galoppo se è lontano, poi trotto e passo per arrivare
             want = 250 if left > 260 else 120 if left > 60 else 50
         else:
-            want = 16 if self.activity == "sniff" else 46
+            want = 16 if self.activity == "sniff" else 24 if self.phase == "stalk" else 46
         P = self.dog.p
         standing = max(0.0, 1.0 - 2.5 * max(P["rear"], P["front"], P["belly"]))  # non striscia: parte quando è in piedi
         want *= (0.6 + 0.4 * size) * facing ** 3 * standing
@@ -903,7 +1350,7 @@ class Brain:
         speed = self.cur_speed = cur + max(-420 * dt, min(260 * dt, want - cur))  # accelera e frena come un cane vero
         step = speed * dt
         self.dog.speed = speed
-        if dist <= step:
+        if dist <= max(step, 0.5):  # sotto il mezzo pixel non ha più una direzione: è arrivato
             self.x, self.y = wx, wy
             if final:
                 self.goal = None

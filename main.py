@@ -230,6 +230,35 @@ class ToyWindow(QWidget):
             p.setPen(QPen(QColor(255, 255, 255, 200), 0.8))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawArc(QRectF(-r * 0.7, -r * 1.7, r * 1.4, r * 1.4), 200 * 16, 140 * 16)
+        elif self.toy.kind == "bone":
+            p.translate(0, -3)
+            p.rotate(math.degrees(self.toy.angle) * 0.3)
+            p.setPen(QPen(QColor("#8C7F68"), 0.7))
+            p.setBrush(QColor("#EFE6D2"))
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(-9, -1.8, 18, 3.6), 1.5, 1.5)
+            for x in (-9.5, 9.5):
+                for y in (-2, 2):
+                    path.addEllipse(QPointF(x, y), 2.6, 2.6)
+            p.drawPath(path.simplified())
+        elif self.toy.kind == "sock":
+            p.translate(0, -3)
+            p.rotate(math.degrees(self.toy.angle) * 0.4)
+            sock = QPainterPath()
+            sock.moveTo(-3, -9)
+            sock.lineTo(3, -9)
+            sock.lineTo(3, 1)
+            sock.quadTo(10, 1, 10, 5)
+            sock.quadTo(10, 8, 4, 8)
+            sock.lineTo(-1, 8)
+            sock.quadTo(-3, 8, -3, 5)
+            sock.closeSubpath()
+            p.setPen(QPen(QColor("#6E1A1A"), 0.7))
+            p.setBrush(QColor("#C93434"))
+            p.drawPath(sock)
+            p.setPen(QPen(QColor("white"), 1.6))
+            for y in (-7, -4, -1):
+                p.drawLine(QPointF(-2.5, y), QPointF(2.5, y))
         else:
             p.translate(0, -2.2)
             p.rotate(math.degrees(self.toy.angle))
@@ -242,6 +271,145 @@ class ToyWindow(QWidget):
             p.drawLine(QPointF(4, -1.5), QPointF(8, -5))  # rametto laterale
             p.setPen(QPen(QColor(255, 255, 255, 50), 0.6))
             p.drawLine(QPointF(-11, -1), QPointF(11, -1))
+
+
+class CritterWindow(QWidget):
+    """Uccellino, gatto o farfalla di passaggio: disegnati a mano, trasparenti ai clic."""
+    W, H, GROUND = 80, 110, 90
+    BIRD = (("#8A6A4A", "#E0733A"), ("#6F7A86", "#F1D7A8"), ("#3C3A38", "#C9A227"))  # dorso, petto
+    CAT = (("#E39A4C", "#B86A28"), ("#8E8E92", "#5E5E63"), ("#2C2A2B", "#141314"))   # pelo, strisce
+    WING = ("#F2B33D", "#7FB3E6", "#F08CB4")
+
+    def __init__(self):
+        super().__init__(None, FLAGS | Qt.WindowType.WindowTransparentForInput)
+        keep_visible(self)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.resize(self.W, self.H)
+        self.c = None
+
+    def follow(self, c):
+        self.c = c
+        if c is None:
+            self.hide()
+            return
+        self.move(int(c.x - self.W / 2), int(c.y - c.h - self.GROUND))
+        self.show()
+        self.update()
+
+    def paintEvent(self, _):
+        c = self.c
+        if c is None:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.translate(self.W / 2, self.GROUND)
+        if c.h < 60:  # ombra a terra
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0, int(60 * (1 - c.h / 60))))
+            w = 28 if c.kind == "cat" else 10
+            p.drawEllipse(QRectF(-w / 2, c.h - 1.5, w, 4))
+        p.scale(c.face, 1)
+        getattr(self, "draw_" + c.kind)(p, c)
+
+    def draw_bird(self, p, c):
+        back, breast = self.BIRD[c.color]
+        flying = c.h > 2 or c.state == "flee"
+        peck = not flying and math.sin(c.t * 7) > 0.6
+        p.setPen(QPen(QColor(40, 30, 20), 0.6))
+        p.setBrush(QColor(back))
+        p.drawPolygon(QPolygon([QPoint(-6, -6), QPoint(-13, -9), QPoint(-12, -5)]))  # coda
+        p.drawEllipse(QRectF(-8, -10, 14, 9))
+        p.setBrush(QColor(breast))
+        p.drawEllipse(QRectF(-2, -8, 7, 6))
+        hx, hy = (6, -6) if peck else (5, -11)
+        p.setBrush(QColor(back))
+        p.drawEllipse(QPointF(hx, hy), 3.6, 3.6)
+        p.setBrush(QColor("#E8B33A"))
+        p.drawPolygon(QPolygon([QPoint(hx + 3, hy - 1), QPoint(hx + 7, hy + 1), QPoint(hx + 3, hy + 1)]))
+        p.setBrush(QColor("black"))
+        p.drawEllipse(QPointF(hx + 1.2, hy - 0.8), 0.8, 0.8)
+        if flying:  # ali che sbattono
+            up = math.sin(c.t * 30) * 9
+            p.setBrush(QColor(back).darker(115))
+            p.drawPolygon(QPolygon([QPoint(-4, -8), QPoint(2, -8), QPoint(-3, int(-8 - up))]))
+        if not flying:
+            p.drawLine(QPointF(-1, -1.5), QPointF(-2, 0))
+            p.drawLine(QPointF(1, -1.5), QPointF(1.5, 0))
+
+    def draw_cat(self, p, c):
+        fur, stripe = self.CAT[c.color]
+        sitting, arched = c.state == "stay", c.state == "scared"
+        walk = c.state in ("arrive", "flee")
+        p.setPen(QPen(QColor(30, 25, 20), 0.8))
+        p.setBrush(QColor(fur))
+        tail = QPainterPath()  # coda
+        if arched:
+            tail.moveTo(-12, -20)
+            tail.cubicTo(-18, -34, -14, -46, -10, -48)
+        elif sitting:
+            tail.moveTo(-8, -3)
+            tail.cubicTo(-18, -2, -20, 2, -6, 1)
+        else:
+            sway = math.sin(c.t * 4) * 4
+            tail.moveTo(-14, -16)
+            tail.cubicTo(-24, -20, -26, -30 + sway, -20, -34 + sway)
+        p.setPen(QPen(QColor(fur), 3.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(tail)
+        p.setPen(QPen(QColor(30, 25, 20), 0.8))
+        p.setBrush(QColor(fur))
+        if sitting:
+            p.drawEllipse(QRectF(-10, -22, 18, 22))  # seduto, di profilo
+            hx, hy = 3, -25
+        else:
+            k = math.sin(c.t * (14 if c.state == "flee" else 7)) * 4 if walk else 0
+            for x, ph in ((-10, 1), (-6, -1), (6, -1), (10, 1)):  # zampe
+                p.drawRect(QRectF(x - 1.5 + ph * k * 0.5, -10, 3, 10))
+            body = QRectF(-15, -26, 30, 14) if arched else QRectF(-15, -20, 30, 12)
+            p.drawRoundedRect(body, 6, 6)
+            p.setPen(QPen(QColor(stripe), 1.2))
+            for x in (-8, -3, 2):
+                p.drawLine(QPointF(x, body.top() + 1), QPointF(x + 1, body.top() + 5))
+            p.setPen(QPen(QColor(30, 25, 20), 0.8))
+            hx, hy = 15, (-24 if arched else -22)
+        p.drawEllipse(QPointF(hx, hy), 7, 6.5)
+        for ex in (-4.5, 3):  # orecchie
+            p.drawPolygon(QPolygon([QPoint(int(hx + ex), int(hy - 4)), QPoint(int(hx + ex + 1.5), int(hy - 11)),
+                                    QPoint(int(hx + ex + 4), int(hy - 5))]))
+        p.setBrush(QColor("#7FB24A"))
+        p.drawEllipse(QPointF(hx + 3, hy - 1), 1.4, 1.6 if not arched else 1.0)
+        p.setBrush(QColor("#E58A8A"))
+        p.drawEllipse(QPointF(hx + 6.5, hy + 1.5), 1, 0.8)
+        if arched:  # bocca aperta: soffia
+            p.setBrush(QColor("#5A1E1E"))
+            p.drawEllipse(QPointF(hx + 5, hy + 3.5), 1.8, 1.4)
+
+    def draw_butterfly(self, p, c):
+        flap = abs(math.sin(c.t * 14))
+        col = QColor(self.WING[c.color])
+        p.setPen(QPen(col.darker(160), 0.7))
+        p.setBrush(col)
+        for sx in (-1, 1):
+            p.save()
+            p.scale(sx * (0.25 + 0.75 * flap), 1)
+            p.drawEllipse(QRectF(0, -14, 9, 8))
+            p.drawEllipse(QRectF(0, -7, 6, 6))
+            p.restore()
+        p.setPen(QPen(QColor(40, 30, 20), 1.6))
+        p.drawLine(QPointF(0, -14), QPointF(0, -2))
+        p.setPen(QPen(QColor(40, 30, 20), 0.6))
+        p.drawLine(QPointF(0, -14), QPointF(2, -18))
+        p.drawLine(QPointF(0, -14), QPointF(-2, -18))
+
+
+class FriendView(view3d.SceneView):
+    """Il cane amico in visita: solo da guardare, i clic passano attraverso."""
+
+    def __init__(self):
+        super().__init__(0, FLAGS | Qt.WindowType.WindowTransparentForInput)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        keep_visible(self)
 
 
 class PickOverlay(QWidget):
@@ -315,6 +483,9 @@ class Pet(QObject):
         self.view = DogWindow(self, 0)
         self.bubble = Bubble(self)
         self.toy_window = ToyWindow()
+        self.critter_windows = []
+        self.friend_view = FriendView()
+        self.friend_in_front = None
         self.pickers = []
         self.reply_ready.connect(self.on_reply)
         if bridge:
@@ -378,6 +549,7 @@ class Pet(QObject):
         s = self.dog.b["kscale"]
         self.brain.set_home(kx, ky + 12 * s, side)
         self.brain.bowl = (kx + 42.2 * s, ky + 3 * s)  # ciotola davanti a destra della cuccia (vedi dog.frag)
+        self.brain.water = (kx - 36.6 * s, ky + 5.5 * s)  # acqua davanti a sinistra
 
     # ------------------------------------------------------------ ciclo
     def tick(self):
@@ -400,6 +572,7 @@ class Pet(QObject):
             self.place_bubble()
         toy = self.brain.toy
         self.toy_window.follow(toy)
+        self.show_visitors()
         self.send_window_moves()
         for name in self.brain.sfx:
             self.sound.play(name)
@@ -407,6 +580,29 @@ class Pet(QObject):
         if abs(self.kennel.food - self.brain.food) > 0.03:
             self.kennel.food = self.brain.food
             self.kennel.update()
+
+    def show_visitors(self):
+        critters = self.brain.critters
+        while len(self.critter_windows) < len(critters):
+            self.critter_windows.append(CritterWindow())
+        for i, w in enumerate(self.critter_windows):
+            w.follow(critters[i] if i < len(critters) else None)
+        f, v = self.brain.friend, self.friend_view
+        if f is None:
+            v.hide()
+            v.dog = None
+            return
+        if v.dog is not f.dog:
+            v.resize(*f.dog.window_size())
+            v.dog, self.friend_in_front = f.dog, None
+        v.rig = f.dog.rig()
+        v.move(int(f.x - v.width() / 2), int(f.y + dog3d.BASE - v.height()))
+        v.show()
+        front = f.y >= self.brain.y  # chi è più in basso sta davanti
+        if front != self.friend_in_front:
+            self.friend_in_front = front
+            (v if front else self.view).raise_()
+        v.update()
 
     def send_window_moves(self):
         """Il cane tira una finestra: KWin la sposta di pixel interi, il resto si accumula."""

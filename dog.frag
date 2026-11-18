@@ -16,7 +16,7 @@ uniform float uHeadR, uMuzzle, uJaw, uTongue, uEyeOpen, uFur, uNeckR;
 uniform vec3 uLeg[16];
 uniform vec4 uLegR;          // anteriore alto/basso, posteriore alto/basso
 uniform float uMane;         // criniera su collo e petto (0 = pelo corto)
-uniform int uCarry;          // in bocca: 0 niente, 1 pallina, 2 rametto
+uniform int uCarry;          // in bocca: 0 niente, 1 pallina, 2 rametto, 3 osso, 4 calzino
 uniform float uFood;         // crocchette nella ciotola (0..1)
 uniform float uZoom;         // pixel per unità (1 nell'app, di più nelle anteprime)
 uniform vec3 uTail[6];
@@ -195,6 +195,14 @@ vec2 mapDog(vec3 pw) {
     if (uCarry == 1) res = opU(res, vec2(length(q - vec3(0.5 * R + M * 0.7, -0.42 * R, 0.0)) - 0.34 * R, 13.0));
     if (uCarry == 2) res = opU(res, vec2(sdRoundCone(q, vec3(0.45 * R + M * 0.6, -0.42 * R, -2.2 * R),
                                                      vec3(0.45 * R + M * 0.6, -0.36 * R, 2.0 * R), 0.13 * R, 0.1 * R), 14.0));
+    if (uCarry == 3) {  // osso di traverso: stecca con due nodi per parte
+        vec3 bq = q - vec3(0.45 * R + M * 0.6, -0.42 * R, 0.0);
+        float bone = sdRoundCone(bq, vec3(0.0, 0.0, -1.1 * R), vec3(0.0, 0.0, 1.1 * R), 0.12 * R, 0.12 * R);
+        vec3 kq = vec3(bq.x, abs(bq.y) - 0.12 * R, abs(bq.z) - 1.15 * R);
+        res = opU(res, vec2(min(bone, length(kq) - 0.2 * R), 18.0));
+    }
+    if (uCarry == 4) res = opU(res, vec2(sdRoundCone(q, vec3(0.45 * R + M * 0.6, -0.42 * R, 0.0),
+                                                     vec3(0.5 * R + M * 0.6, -1.3 * R, 0.5 * R), 0.17 * R, 0.21 * R), 19.0));
     return res;
 }
 
@@ -229,6 +237,11 @@ vec2 mapKennel(vec3 pw) {
     float bowl = max(sdEllipsoid(bp - vec3(0.0, 1.0, 0.0), vec3(9.0, 5.5, 9.0)), bp.y - 4.6);
     bowl = max(bowl, -sdEllipsoid(bp - vec3(0.0, 5.2, 0.0), vec3(7.6, 4.0, 7.6)));
     res = opU(res, vec2(max(bowl, -bp.y), 15.0));
+    vec3 wp = p - vec3(-40.0, 0.0, 22.0);  // ciotola dell'acqua davanti a sinistra
+    float wbowl = max(sdEllipsoid(wp - vec3(0.0, 1.0, 0.0), vec3(9.0, 5.5, 9.0)), wp.y - 4.6);
+    wbowl = max(wbowl, -sdEllipsoid(wp - vec3(0.0, 5.2, 0.0), vec3(7.6, 4.0, 7.6)));
+    res = opU(res, vec2(max(wbowl, -wp.y), 15.0));
+    res = opU(res, vec2(sdEllipsoid(wp - vec3(0.0, 3.4, 0.0), vec3(7.2, 0.6, 7.2)), 17.0));
     if (uFood > 0.02) res = opU(res, vec2(sdEllipsoid(bp - vec3(0.0, 1.6 + 2.0 * uFood, 0.0), vec3(6.6, 1.6, 6.6)) - 0.4 * noise(bp * 1.5), 16.0));
     return vec2(res.x * s, res.y);
 }
@@ -274,7 +287,7 @@ float groundShadow(vec3 g) {
         p.z += 6.0;
         vec2 q = abs(p.xz + vec2(4.0, -4.0)) - vec2(31.0, 28.0);
         float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
-        float dbowl = length(p.xz - vec2(40.0, 16.0)) - 9.0;
+        float dbowl = min(length(p.xz - vec2(40.0, 16.0)), length(p.xz - vec2(-40.0, 16.0))) - 9.0;
         return max(0.32 * (1.0 - smoothstep(-4.0, 9.0, d)), 0.3 * (1.0 - smoothstep(-2.0, 4.0, dbowl)));
     }
     vec3 p = transpose(uBodyRot) * (g - vec3(uRoot.x, 0.0, uRoot.z));
@@ -316,6 +329,8 @@ vec3 dogAlbedo(vec3 pw, float m) {
         return lin(abs(bc.y + 0.6 * sin(atan(bc.z, bc.x) * 2.0) * 0.5) < 0.09 ? vec3(0.95) : vec3(0.82, 0.9, 0.22));
     }
     if (m == 14.0) return lin(vec3(0.45, 0.3, 0.17)) * (0.8 + 0.3 * noise(q * vec3(0.6, 0.6, 3.0)));
+    if (m == 18.0) return lin(vec3(0.93, 0.89, 0.8)) * (0.9 + 0.15 * noise(q * 2.0));  // osso
+    if (m == 19.0) return lin(fract(q.y / (0.3 * R)) < 0.5 ? vec3(0.8, 0.15, 0.15) : vec3(0.95));  // calzino a righe
 
     vec3 coat = lin(uCoat), coat2 = lin(uCoat2), mark = lin(uMark);
     float w = 0.0;  // quantità di "segno" (bianco/crema)
@@ -372,6 +387,7 @@ vec3 kennelAlbedo(vec3 pw, float m) {
     k.z += 6.0;
     if (m == 11.0 && abs(k.x) < 28.0 && abs(k.z) < 25.0 && k.y > 2.1 && k.y < 41.0) return lin(vec3(0.09, 0.06, 0.04));  // interno in ombra
     if (m == 15.0) return lin(vec3(0.72, 0.16, 0.12)) * (0.9 + 0.1 * noise(p));  // ciotola smaltata
+    if (m == 17.0) return lin(vec3(0.3, 0.55, 0.8));  // acqua
     if (m == 16.0) return lin(vec3(0.5, 0.3, 0.15)) * (0.6 + 0.6 * noise(p * 2.5));  // crocchette
     if (m == 12.0) {
         float row = fract(p.y / 3.2 + 0.5 * step(0.5, fract(p.x / 7.0)));
@@ -429,7 +445,7 @@ void main() {
     float rim = pow(clamp(1.0 + dot(n, rd), 0.0, 1.0), 3.0);
     vec3 col = alb * (vec3(1.0, 0.95, 0.86) * dif * mix(0.35, 1.0, sh) * 1.35 + vec3(0.6, 0.64, 0.72) * sky * 0.65 * ao);
     col += alb * rim * 0.45 * ao;
-    if ((m >= 5.0 && m <= 8.0) || m == 15.0) {
+    if ((m >= 5.0 && m <= 8.0) || m == 15.0 || m == 17.0) {
         float spec = pow(clamp(dot(reflect(-L, n), -rd), 0.0, 1.0), m == 6.0 ? 70.0 : 25.0);
         col += vec3(1.0) * spec * (m == 6.0 ? 1.4 : 0.35) * sh;
         if (m == 6.0) col += vec3(1.0) * smoothstep(0.93, 0.975, dot(n, normalize(vec3(-0.3, 0.55, 1.0))));  // riflesso vivo negli occhi
