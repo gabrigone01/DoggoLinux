@@ -122,7 +122,7 @@ Crea una chiave gratuita su <https://aistudio.google.com/apikey>, poi:
 { "breed": "maremmano", "name": "", "kennel": "right", "windows": true, "api_key": "", "model": "gemini-flash-latest" }
 ```
 
-`breed`: `maremmano`, `golden`, `collie`, `dachshund`, `shiba`. `kennel`: `right` o `left` (angolo dello schermo principale). Quando trascini la cuccia si aggiunge `kennel_pos` con la sua posizione.
+`breed`: `maremmano`, `golden`, `collie`, `dachshund`, `shiba`, `meticcio`. `kennel`: `right` o `left` (angolo dello schermo principale). Quando trascini la cuccia si aggiunge `kennel_pos` con la sua posizione.
 
 ## File
 

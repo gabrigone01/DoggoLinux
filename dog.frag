@@ -101,6 +101,8 @@ float sdEar(vec3 q, int i) {
 }
 
 vec3 toHead(vec3 p) { return transpose(uHeadRot) * (p - uHeadPos); }
+// occhioni tondi, più davanti che di lato: visti di fronte non sembrano distanti
+vec3 eyeC(float sg) { return vec3(0.56 * uHeadR, 0.16 * uHeadR, sg * 0.4 * uHeadR); }
 
 vec2 mapDog(vec3 pw) {
     vec3 p = transpose(uBodyRot) * (pw - uRoot);
@@ -160,7 +162,7 @@ vec2 mapDog(vec3 pw) {
     vec3 jq = q - hinge;
     jq = vec3(cos(ja) * jq.x - sin(ja) * jq.y, sin(ja) * jq.x + cos(ja) * jq.y, jq.z) + hinge;
     float jaw = sdRoundCone(jq, vec3(0.15 * R, -0.5 * R, 0.0), vec3(0.45 * R + M * 0.85, -0.5 * R, 0.0), 0.27 * R, 0.14 * R);
-    head = min(head, jaw);
+    head = smin(head, jaw, 0.16 * R * max(0.0, 1.0 - uJaw * 4.0));  // bocca chiusa: mento unito al muso
     head -= uFur * (0.08 + 0.1 * (furN(q * 0.9) - 0.4));
 
     float fur = smin(smin(core, legs, rh * 0.45), tail, uTailR * 1.2);
@@ -172,12 +174,12 @@ vec2 mapDog(vec3 pw) {
     if (head < best) { best = head; part = 4.0; }
     vec2 res = vec2(fur, part);
 
-    vec3 nc = vec3(0.64 * R + uMuzzle, -0.1 * R, 0.0);
-    res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.23 * R, 0.19 * R, 0.27 * R)), 5.0));
+    vec3 nc = vec3(0.6 * R + uMuzzle, -0.08 * R, 0.0);
+    res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.17 * R, 0.14 * R, 0.21 * R)), 5.0));
     for (int s = 0; s < 2; s++) {
         float sg = s == 0 ? 1.0 : -1.0;
-        vec3 ec = vec3(0.52 * R, 0.18 * R, sg * 0.5 * R * mix(0.93, 1.0, uEyeOpen));
-        res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.2, 0.15 * mix(0.3, 1.0, uEyeOpen), 0.19) * R), 6.0));
+        vec3 ec = eyeC(sg) * vec3(1.0, 1.0, mix(0.93, 1.0, uEyeOpen));
+        res = opU(res, vec2(sdEllipsoid(q - ec, vec3(0.2, 0.21 * mix(0.25, 1.0, uEyeOpen), 0.22) * R), 6.0));
     }
     if (uJaw > 0.03) {
         vec3 mc = vec3(0.35 * R + uMuzzle * 0.45, -0.45 * R - uJaw * 0.12 * R, 0.0);
@@ -189,7 +191,7 @@ vec2 mapDog(vec3 pw) {
         float dr = -0.5 * uTongue;
         vec3 tq = q - tc;
         tq = vec3(cos(dr) * tq.x - sin(dr) * tq.y, sin(dr) * tq.x + cos(dr) * tq.y, tq.z);
-        res = opU(res, vec2(sdEllipsoid(tq, vec3(tl * 0.5, 0.07 * R, 0.25 * R)), 8.0));
+        res = opU(res, vec2(sdEllipsoid(tq, vec3(tl * 0.5, 0.07 * R, 0.17 * R)), 8.0));
     }
     for (int i = 0; i < 2; i++) res = opU(res, vec2(sdEar(q, i) - uFur * 0.15, 9.0));
     if (uCarry == 1) res = opU(res, vec2(length(q - vec3(0.5 * R + M * 0.7, -0.42 * R, 0.0)) - 0.34 * R, 13.0));
@@ -312,15 +314,15 @@ vec3 dogAlbedo(vec3 pw, float m) {
     float R = uHeadR, rc = uBodyR.x;
     float n = furN(p * 1.5) * 0.4 + strand(p) * 0.6;
     if (m == 5.0) {  // naso: narici scure e tartufo leggermente granuloso
-        vec3 nq = q - vec3(0.64 * R + uMuzzle, -0.1 * R, 0.0);
+        vec3 nq = q - vec3(0.6 * R + uMuzzle, -0.08 * R, 0.0);
         float nostril = smoothstep(0.07 * R, 0.035 * R, length(vec2(nq.y + 0.04 * R, abs(nq.z) - 0.11 * R))) * step(0.08 * R, nq.x);
         return lin(vec3(0.08, 0.07, 0.07) * (0.85 + 0.3 * noise(q * 3.0)) * (1.0 - 0.8 * nostril));
     }
     if (m == 6.0) {  // occhio: pupilla, iride marrone calda, bordo scuro
-        vec3 ec = vec3(0.52 * R, 0.18 * R, sign(q.z) * 0.5 * R);
-        float c = dot(normalize(q - ec), normalize(vec3(0.8, 0.08, sign(q.z) * 0.6)));
-        vec3 iris = mix(vec3(0.42, 0.24, 0.1), vec3(0.6, 0.38, 0.16), smoothstep(0.75, 0.9, c));
-        return lin(c > 0.95 ? vec3(0.03) : c > 0.72 ? iris : vec3(0.12, 0.07, 0.05));
+        vec3 ec = eyeC(sign(q.z));
+        float c = dot(normalize(q - ec), normalize(vec3(0.85, 0.05, sign(q.z) * 0.5)));
+        vec3 iris = mix(vec3(0.3, 0.16, 0.07), vec3(0.52, 0.31, 0.13), smoothstep(0.45, 0.8, c));
+        return lin(c > 0.86 ? vec3(0.02) : c > 0.4 ? iris : vec3(0.08, 0.05, 0.04));  // pupilla e iride grandi
     }
     if (m == 7.0) return lin(mix(vec3(0.07, 0.05, 0.05), vec3(0.5, 0.17, 0.2), smoothstep(0.24 * R, 0.08 * R, abs(q.z))));
     if (m == 8.0) return lin(vec3(0.93, 0.5, 0.55));
@@ -363,6 +365,10 @@ vec3 dogAlbedo(vec3 pw, float m) {
         if (m == 4.0) w = smoothstep(0.4 * R, 0.9 * R, q.x) * 0.6;
         if (m == 1.0) w = smoothstep(uChest.y - rc * 0.3, uChest.y - rc * 1.0, p.y) * 0.5;
         if (m == 3.0) w = 0.35;
+    } else if (uPattern == 5) {  // meticcio arruffato: muso e barba chiari, ciocche più scure sul dorso, coda chiara
+        if (m == 4.0) w = smoothstep(0.25 * R, 0.75 * R, q.x + edge * R) * 0.75;
+        if (m == 1.0) w = -smoothstep(uChest.y - rc * 0.2, uChest.y + rc * 0.8, p.y) * (0.25 + 0.5 * n);
+        if (m == 3.0) w = 0.55;
     } else if (uPattern == 4) {  // bassotto: dorso più scuro
         if (m == 1.0 || m == 4.0) w = -smoothstep(uChest.y + rc * 0.4, uChest.y + rc * 1.0, p.y) * 0.5;
     }
@@ -448,7 +454,7 @@ void main() {
     if ((m >= 5.0 && m <= 8.0) || m == 15.0 || m == 17.0) {
         float spec = pow(clamp(dot(reflect(-L, n), -rd), 0.0, 1.0), m == 6.0 ? 70.0 : 25.0);
         col += vec3(1.0) * spec * (m == 6.0 ? 1.4 : 0.35) * sh;
-        if (m == 6.0) col += vec3(1.0) * smoothstep(0.93, 0.975, dot(n, normalize(vec3(-0.3, 0.55, 1.0))));  // riflesso vivo negli occhi
+        if (m == 6.0) col += vec3(1.0) * smoothstep(0.93, 0.965, dot(n, normalize(vec3(-0.3, 0.55, 1.0))));  // riflesso vivo negli occhi
     }
     col *= mix(0.75, 1.0, ao);
     col = clamp(pow(col, vec3(1.0 / 2.2)), 0.0, 1.0);  // >1 romperebbe l'alpha premoltiplicato

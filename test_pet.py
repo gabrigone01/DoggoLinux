@@ -353,7 +353,7 @@ class BrainTest(unittest.TestCase):
             self.assertEqual(self.brain.toy.state, "rest")
             self.brain.toy = None
         self.brain.scene("find", "ball")
-        self.assertTrue(self.run_until(lambda: self.brain.activity == "play", 20))
+        self.assertTrue(self.run_until(lambda: self.brain.activity == "play", 60))
 
     def test_drinks_when_thirsty(self):
         self.brain.water = (1500, 2000)

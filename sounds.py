@@ -15,13 +15,13 @@ VERSION = 2  # cambiare se si modificano sintesi o registrazioni: rigenera la ca
 RECORDED = Path(__file__).with_name("sounds")
 # registrazione da usare per razza: i cani grandi abbaiano col vocione, i piccoli con la voce acuta
 SOURCE = dict(bark=dict(maremmano="bark_big", golden="bark_big", collie="bark_big", dachshund="bark_small",
-                        shiba="bark_small"))
+                        shiba="bark_small", meticcio="bark_small"))
 # intonazione rispetto alla registrazione (>1 più acuto): solo per i versi, non per i rumori
-SHIFT = dict(maremmano=0.92, golden=1.0, collie=1.1, dachshund=1.0, shiba=1.08)
+SHIFT = dict(maremmano=0.92, golden=1.0, collie=1.1, dachshund=1.0, shiba=1.08, meticcio=1.04)
 VOCAL = {"bark", "yip", "whine", "howl", "growl", "pant", "yawn"}
 
 # altezza della voce per razza (Hz): il maremmano ha un vocione, lo shiba strilla
-PITCH = dict(maremmano=230, golden=310, collie=400, dachshund=470, shiba=520)
+PITCH = dict(maremmano=230, golden=310, collie=400, dachshund=470, shiba=520, meticcio=450)
 
 
 # ------------------------------------------------------------------ mattoncini di sintesi
