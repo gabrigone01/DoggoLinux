@@ -90,6 +90,7 @@ Per costruirlo in locale: `sh packaging/build-deb.sh 1.0.1` → `build/doggo_all
 | Azione | Effetto |
 |---|---|
 | Clic sinistro sul cane | Ti guarda e apre/chiude la chat (Invio per inviare, Esc per chiudere) |
+| Tieni premuto il tasto sinistro sul cane e trascina | Lo prendi per la collottola e lo sposti dove vuoi; quando lo lasci si scrolla e scodinzola |
 | Clic con la rotella sul cane | Carezza: si gode le coccole a occhi chiusi, ti dà la zampa o si mette a pancia all'aria |
 | Clic destro → «Tira rametto» / «Lancia pallina» | Clicchi un punto qualsiasi degli schermi: il giocattolo vola lì e cade a terra, il cane lo rincorre, lo prende in bocca e te lo riporta |
 | Clic destro → «Nome del cane…» | Gli dai un nome: lo usa in chat, e se lo scrivi drizza le orecchie |
