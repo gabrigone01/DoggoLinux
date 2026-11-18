@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install pyinstaller==6.11.1 PyQt6==6.7.1 pillow==11.0.0
-      - run: pyinstaller --noconfirm --onefile --windowed --name Doggo --icon icon.png --add-data "dog.frag:." --add-data "icon.png:." main.py
+      - run: pyinstaller --noconfirm --onefile --windowed --name Doggo --icon icon.png --add-data "dog.frag:." --add-data "icon.png:." --add-data "sounds:sounds" main.py
       - run: Rename-Item dist/Doggo.exe Doggo-windows.exe
       - uses: actions/upload-artifact@v4
         with: {name: windows, path: dist/Doggo-windows.exe}
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install pyinstaller==6.11.1 PyQt6==6.7.1 pillow==11.0.0
-      - run: pyinstaller --noconfirm --windowed --name Doggo --icon icon.png --osx-bundle-identifier com.github.gabrigone01.doggo --add-data "dog.frag:." --add-data "icon.png:." main.py
+      - run: pyinstaller --noconfirm --windowed --name Doggo --icon icon.png --osx-bundle-identifier com.github.gabrigone01.doggo --add-data "dog.frag:." --add-data "icon.png:." --add-data "sounds:sounds" main.py
       - run: cd dist && ditto -c -k --keepParent Doggo.app Doggo-macos.zip
       - uses: actions/upload-artifact@v4
         with: {name: macos, path: dist/Doggo-macos.zip}

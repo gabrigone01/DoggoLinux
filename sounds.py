@@ -1,4 +1,5 @@
-"""Versi e rumori del cane, sintetizzati in Python (nessun file audio esterno) e suonati col player di sistema."""
+"""Versi e rumori del cane: registrazioni vere (cartella sounds/, licenze in sounds/CREDITS.md) intonate alla razza,
+sintesi in Python per quelle che mancano; suonati col player di sistema."""
 import math
 import random
 import shutil
@@ -10,7 +11,14 @@ import wave
 from pathlib import Path
 
 RATE = 22050
-VERSION = 1  # cambiare se si modifica la sintesi: rigenera la cache
+VERSION = 2  # cambiare se si modificano sintesi o registrazioni: rigenera la cache
+RECORDED = Path(__file__).with_name("sounds")
+# registrazione da usare per razza: i cani grandi abbaiano col vocione, i piccoli con la voce acuta
+SOURCE = dict(bark=dict(maremmano="bark_big", golden="bark_big", collie="bark_big", dachshund="bark_small",
+                        shiba="bark_small"))
+# intonazione rispetto alla registrazione (>1 più acuto): solo per i versi, non per i rumori
+SHIFT = dict(maremmano=0.92, golden=1.0, collie=1.1, dachshund=1.0, shiba=1.08)
+VOCAL = {"bark", "yip", "whine", "howl", "growl", "pant", "yawn"}
 
 # altezza della voce per razza (Hz): il maremmano ha un vocione, lo shiba strilla
 PITCH = dict(maremmano=230, golden=310, collie=400, dachshund=470, shiba=520)
@@ -178,6 +186,38 @@ NAMES = ["bark", "yip", "whine", "howl", "growl", "pant", "yawn", "sniff", "lick
 VOLUME = dict(snore=0.5, sniff=0.7, lick=0.6, pant=0.7, bounce=0.8, clack=0.8, thud=0.9)
 
 
+def read_wav(path):
+    """WAV mono 16 bit → campioni float."""
+    with wave.open(str(path)) as w:
+        if w.getsampwidth() != 2 or w.getnchannels() != 1:
+            raise ValueError("serve un WAV mono a 16 bit")
+        rate, raw = w.getframerate(), w.readframes(w.getnframes())
+    xs = [v / 32768 for (v,) in struct.iter_unpack("<h", raw)]
+    return resample(xs, rate / RATE) if rate != RATE else xs
+
+
+def resample(xs, factor):
+    """Ricampiona: factor > 1 accorcia e alza l'intonazione (come una voce più piccola)."""
+    n = int(len(xs) / factor)
+    out = []
+    for i in range(n):
+        x = i * factor
+        j = int(x)
+        a = x - j
+        out.append(xs[j] * (1 - a) + (xs[j + 1] if j + 1 < len(xs) else 0.0) * a)
+    return out
+
+
+def recorded(name, breed):
+    """Campioni della registrazione vera per quel suono e quella razza, oppure None."""
+    stem = SOURCE.get(name, {}).get(breed, name)
+    path = RECORDED / f"{stem}.wav"
+    if not path.exists():
+        return None
+    xs = read_wav(path)
+    return resample(xs, SHIFT.get(breed, 1.0)) if name in VOCAL else xs
+
+
 def write_wav(path, samples, volume=0.55):
     peak = max((abs(s) for s in samples), default=1.0) or 1.0
     k = volume / peak
@@ -231,8 +271,9 @@ class Player:
             path = self.path(name, breed)
             if not path.exists():
                 try:
-                    write_wav(path, make(name, p), 0.55 * VOLUME.get(name, 1.0))
-                except OSError:
+                    xs = recorded(name, breed)
+                    write_wav(path, make(name, p) if xs is None else xs, 0.55 * VOLUME.get(name, 1.0))
+                except (OSError, ValueError):
                     return
             self.ready.add((name, breed))
 

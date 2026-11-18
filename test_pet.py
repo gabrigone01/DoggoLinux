@@ -331,6 +331,17 @@ class SoundTest(unittest.TestCase):
                 with wave.open(str(path)) as w:
                     self.assertEqual((w.getframerate(), w.getnchannels()), (sounds.RATE, 1))
 
+    def test_real_recordings_are_used_and_tuned_per_breed(self):
+        import sounds
+        big = sounds.recorded("bark", "maremmano")
+        small = sounds.recorded("bark", "shiba")
+        self.assertIsNotNone(big)
+        self.assertIsNotNone(small)
+        self.assertNotEqual(len(big), len(small))  # registrazioni diverse per cani grandi e piccoli
+        golden = sounds.recorded("bark", "golden")
+        self.assertGreater(len(big), len(golden))  # il maremmano è intonato più grave (più lento)
+        self.assertIsNone(sounds.recorded("thud", "golden"))  # questo resta sintetizzato
+
     def test_brain_asks_for_sounds(self):
         brain = Brain(dog3d.Dog("shiba"), Areas(SCREENS), random.Random(0))
         brain.perform(["bark"])
