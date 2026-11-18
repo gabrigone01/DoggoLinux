@@ -9,7 +9,7 @@ ELEVATION = math.radians(14)  # inclinazione della camera, condivisa con lo shad
 
 BREEDS = {
     "maremmano": dict(
-        label="Pastore Maremmano Abruzzese", Hs=36, rc=14, rh=12.5, Lb=42, R=13.6, muzzle=12.5, neck=13,
+        label="Pastore Maremmano Abruzzese", Hs=33, rc=14, rh=12.5, Lb=40, R=15.2, muzzle=8.8, neck=13,
         neckR=10.5, tail=31, tailR=4.0, tailFur=4.2, legR=4.4, fur=2.4, ear="floppy", earLen=0.8, earTaper=0.6, tailBias=-0.75,
         mane=1.0, thigh=0.68, tail_kind="low", pattern=0, coat="#EFE8D8", coat2="#D6BF96", mark="#F8F4EC",
         roof="#5E3A22", wood="#9C6B3E", independence=0.4, kscale=1.15,

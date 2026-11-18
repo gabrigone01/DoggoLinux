@@ -254,8 +254,10 @@ vec2 map(vec3 p) { return uScene == 0 ? mapDog(p) : mapKennel(p); }
 vec3 calcNormal(vec3 p) {
     const vec2 k = vec2(1, -1);
     float e = 0.08;
-    return normalize(k.xyy * map(p + k.xyy * e).x + k.yyx * map(p + k.yyx * e).x +
-                     k.yxy * map(p + k.yxy * e).x + k.xxx * map(p + k.xxx * e).x);
+    vec3 g = k.xyy * map(p + k.xyy * e).x + k.yyx * map(p + k.yyx * e).x +
+             k.yxy * map(p + k.yxy * e).x + k.xxx * map(p + k.xxx * e).x;
+    float l = length(g);
+    return l > 1e-5 ? g / l : vec3(0.0, 0.0, 1.0);  // gradiente nullo: normalize darebbe NaN (pixel neri)
 }
 float softShadow(vec3 ro, vec3 rd) {
     float res = 1.0, t = 0.6;
@@ -391,7 +393,7 @@ vec3 dogAlbedo(vec3 pw, float m) {
         if (m == 4.0) c = mix(c, coat2, 0.45 * smoothstep(0.1 * R, -0.5 * R, q.x) * smoothstep(-0.1 * R, 0.4 * R, q.y));
         c = mix(c, coat2, 0.35 * (1.0 - n));
     }
-    return c * (0.88 + 0.24 * n);
+    return c * clamp(0.88 + 0.24 * n, 0.6, 1.2);  // il rumore del pelo non deve mai annerire
 }
 
 vec3 kennelAlbedo(vec3 pw, float m) {
@@ -450,6 +452,10 @@ void main() {
     }
     vec3 pos = ro + rd * t;
     vec3 n = calcNormal(pos);
+    if (dot(n, rd) > 0.0) {  // il raggio è entrato in una ciocca: torna in superficie, se no luce e AO sono zero (nero)
+        pos -= rd * 0.6;
+        n = normalize(n - 2.0 * dot(n, rd) * rd);
+    }
     float m = h.y;
     vec3 alb = uScene == 0 ? dogAlbedo(pos, m) : kennelAlbedo(pos, m);
     float sh = softShadow(pos + n * 0.5, L);
@@ -466,6 +472,6 @@ void main() {
         if (m == 6.0) col += vec3(1.0) * smoothstep(0.975, 0.99, dot(n, normalize(vec3(-0.3, 0.55, 1.0)))) * 0.8;  // riflesso vivo negli occhi
     }
     col *= mix(0.75, 1.0, ao);
-    col = clamp(pow(col, vec3(1.0 / 2.2)), 0.0, 1.0);  // >1 romperebbe l'alpha premoltiplicato
+    col = clamp(pow(max(col, 0.0), vec3(1.0 / 2.2)), 0.0, 1.0);  // >1 romperebbe l'alpha premoltiplicato
     fragColor = vec4(col, 1.0) * cover + ground * (1.0 - cover);  // alpha premoltiplicato
 }
