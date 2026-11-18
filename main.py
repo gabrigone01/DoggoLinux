@@ -285,12 +285,12 @@ class DogWindow(view3d.SceneView):
         self.ctl.pressed(self.scene, e.button(), e.globalPosition().toPoint())
 
     def mouseMoveEvent(self, e):
-        if self.scene == 1:
-            self.ctl.drag_kennel(e.globalPosition().toPoint())
+        gpos = e.globalPosition().toPoint()
+        self.ctl.drag_kennel(gpos) if self.scene == 1 else self.ctl.drag_dog(gpos)
 
     def mouseReleaseEvent(self, e):
-        if self.scene == 1 and e.button() == Qt.MouseButton.LeftButton:
-            self.ctl.drop_kennel()
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.ctl.drop_kennel() if self.scene == 1 else self.ctl.release_dog()
 
 
 class Pet(QObject):
@@ -304,6 +304,7 @@ class Pet(QObject):
         self.chat = None
         self._mask = None
         self.drag = None
+        self.dog_drag = None
         self.dog_in_front = None
         self.kennel_pos = (0, 0)
         self.dog = dog3d.Dog(cfg["breed"])
@@ -438,13 +439,35 @@ class Pet(QObject):
         elif button == Qt.MouseButton.MiddleButton and scene == 0:
             self.brain.pet()  # carezza
         elif button == Qt.MouseButton.LeftButton and scene == 0:
-            if self.bubble.isVisible():
-                self.close_chat()
-            else:
-                self.brain.call()  # si gira verso di te, poi si apre il fumetto
-                QTimer.singleShot(450, self.open_chat)
+            self.dog_drag = (gpos, False)  # clic o presa: si decide muovendo o rilasciando
         elif button == Qt.MouseButton.LeftButton and scene == 1:
             self.drag = (gpos, self.kennel.pos(), False)  # clic o trascinamento: si decide al rilascio
+
+    def drag_dog(self, gpos):
+        """Tasto sinistro tenuto premuto sul cane: lo prendi per la collottola e lo sposti."""
+        if self.dog_drag is None:
+            return
+        start, lifted = self.dog_drag
+        if not lifted:
+            if (gpos - start).manhattanLength() < 6:
+                return
+            self.dog_drag = (start, True)
+            self.close_chat()
+            self.brain.pick_up()
+        self.brain.hold_at(gpos.x(), gpos.y())
+
+    def release_dog(self):
+        if self.dog_drag is None:
+            return
+        lifted = self.dog_drag[1]
+        self.dog_drag = None
+        if lifted:
+            self.brain.drop()  # lo appoggi: atterra, si scrolla e scodinzola
+        elif self.bubble.isVisible():
+            self.close_chat()
+        else:
+            self.brain.call()  # si gira verso di te, poi si apre il fumetto
+            QTimer.singleShot(450, self.open_chat)
 
     def drag_kennel(self, gpos):
         if self.drag is None:

@@ -184,6 +184,22 @@ class BrainTest(unittest.TestCase):
             ball.step(1 / 30, self.areas)
         self.assertEqual((ball.state, ball.h), ("rest", 0.0))
 
+    def test_pick_up_and_move_the_dog(self):
+        self.brain.throw("ball", 600, 1500)
+        self.run_until(lambda: False, 1)
+        self.brain.pick_up()
+        for gx in range(800, 1200, 40):  # trascinato col mouse
+            self.brain.hold_at(gx, 1400)
+            self.brain.update(1 / 30)
+        self.assertEqual(self.brain.activity, "held")
+        self.assertGreater(self.dog.p["hop"], 10)  # sollevato da terra
+        self.brain.drop()
+        self.run_until(lambda: False, 1)
+        self.assertFalse(self.brain.held)
+        self.assertIsNotNone(self.areas.at(self.brain.x, self.brain.y))
+        self.assertLess(abs(self.brain.x - 1160), 1)
+        self.assertLess(self.dog.p["hop"], 2)  # appoggiato
+
     def test_petting_reactions(self):
         seen = set()
         for _ in range(20):

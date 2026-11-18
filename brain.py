@@ -150,6 +150,7 @@ class Brain:
         self.perch = None               # seduto su una finestra: (id, distanza dal bordo sinistro)
         self.target = None              # finestra scelta per giocare
         self.zig = 1                    # lato dello zig-zag quando la meta è quasi in verticale
+        self.held = False               # preso in braccio col mouse
 
     # ------------------------------------------------------------ comandi esterni
     @property
@@ -199,6 +200,30 @@ class Brain:
         self.activity, self.timer, self.phase = "fetch", 60.0, "watch"
         self.perform(["ears_up"])
 
+    LIFT = 22  # di quanto lo sollevi da terra (px): resta l'ombra sotto
+
+    def pick_up(self):
+        """Preso per la collottola: smette quello che stava facendo."""
+        self.held = True
+        self.goal = self.perch = self.leap = None
+        self.dog.carry = 0
+        if self.activity in ("fetch", "play"):
+            self.toy = None if self.activity == "play" else self.toy
+        self.activity, self.timer, self.phase = "held", 1e9, None
+
+    def hold_at(self, gx, gy):
+        """Il cursore tiene il cane sul dorso: il punto a terra sta sotto."""
+        b = self.dog.b
+        self.x, self.y = gx, gy + b["Hs"] + b["rc"] * 1.4 + self.LIFT
+
+    def drop(self):
+        self.held = False
+        i = self.areas.at(self.x, self.y)
+        i = self.areas.nearest(self.x, self.y) if i is None else i
+        self.x, self.y = self.areas.clamp(i, self.x, self.y, *self.margins())
+        self.start("stand", 2.0)
+        self.perform(["shake", "wag"])
+
     def perform(self, actions):
         for a in actions:
             if a in ACTIONS:
@@ -218,6 +243,16 @@ class Brain:
         self.food = min(1.0, self.food + dt / 900)  # la ciotola si riempie piano piano
         dog = self.dog
         T = dict(dog3d.POSE_DEFAULTS)
+        if self.held:  # in braccio: zampe penzoloni, coda giù che scodinzola, ti guarda
+            T.update(hop=self.LIFT, tailUp=-0.5, wagAmp=0.45, wagFreq=3.5, ears=-0.4, jaw=0.3, tongue=0.5,
+                     headRoll=0.12 * math.sin(self.t * 2.0))
+            dog.speed = 0.0
+            self.gaze = "camera"
+            self.run_overlays(dt, T)
+            self.look(dt, T)
+            dog.target = T
+            dog.step(dt)
+            return
         moved = self.move(dt)
         if not moved:
             dog.speed = 0.0 if self.activity != "spin" else 70.0

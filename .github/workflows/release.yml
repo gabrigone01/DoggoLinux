@@ -30,7 +30,7 @@ jobs:
         with: {name: windows, path: dist/Doggo-windows.exe}
 
   macos:
-    runs-on: macos-14   # Apple Silicon
+    runs-on: macos-15   # Apple Silicon (macos-14 non è più disponibile)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
