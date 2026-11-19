@@ -1,4 +1,4 @@
-# A ogni tag "v…" (es. v1.0.1) costruisce Linux (.deb), Windows (.exe) e macOS (.app in .zip)
+# A ogni tag "v…" (es. v1.0.1) costruisce Linux (.deb), Windows (installer .exe) e macOS (.app in .zip)
 # e li allega alla Release di GitHub.
 name: Pacchetti
 on:
@@ -24,10 +24,16 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install pyinstaller==6.11.1 PyQt6==6.7.1 pillow==11.0.0
-      - run: pyinstaller --noconfirm --onefile --windowed --name Doggo --icon icon.png --add-data "dog.frag:." --add-data "icon.png:." --add-data "sounds:sounds" main.py
-      - run: Rename-Item dist/Doggo.exe Doggo-windows.exe
+      # cartella (non --onefile): parte subito, senza scompattarsi a ogni avvio
+      - run: pyinstaller --noconfirm --windowed --name Doggo --icon icon.png --add-data "dog.frag:." --add-data "icon.png:." --add-data "sounds:sounds" main.py
+      - run: python -c "from PIL import Image; Image.open('icon.png').save('build/icon.ico')"
+      - run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DMyVersion=$("${env:GITHUB_REF_NAME}" -replace '^v','')" packaging\doggo.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
-        with: {name: windows, path: dist/Doggo-windows.exe}
+        with: {name: windows, path: dist/Doggo-windows-setup.exe}
 
   macos:
     runs-on: macos-15   # Apple Silicon (macos-14 non è più disponibile)
@@ -55,5 +61,5 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             doggo_all.deb
-            Doggo-windows.exe
+            Doggo-windows-setup.exe
             Doggo-macos.zip

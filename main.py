@@ -583,6 +583,9 @@ class Pet(QObject):
             self.cursor = (pos.x(), pos.y())
         self.brain.update(dt, self.cursor)
         rig = self.dog.rig()
+        if self.dog.fit(rig):  # mossa più grande della finestra: la allargo invece di tagliare il cane
+            self.view.resize(*self.dog.window_size())
+            self._mask = None
         w, h = self.view.width(), self.view.height()
         self.view.dog, self.view.rig = self.dog, rig
         self.view.move(int(self.brain.x - w / 2), int(self.brain.y + dog3d.BASE - h))
@@ -620,6 +623,8 @@ class Pet(QObject):
             v.resize(*f.dog.window_size())
             v.dog, self.friend_in_front = f.dog, None
         v.rig = f.dog.rig()
+        if f.dog.fit(v.rig):
+            v.resize(*f.dog.window_size())
         v.move(int(f.x - v.width() / 2), int(f.y + dog3d.BASE - v.height()))
         v.show()
         front = f.y >= self.brain.y  # chi è più in basso sta davanti

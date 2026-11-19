@@ -81,7 +81,9 @@ class RigTest(unittest.TestCase):
                     self.assertLessEqual(dog3d.length(dog3d.sub(low, mid)), l2 + 1e-3, msg=key)
                     self.assertAlmostEqual(foot[1], dog.b["legR"] * 0.9, places=3, msg=(key, pose))
                 w, h = dog.window_size()
-                self.assertTrue(80 < w < 340 and 60 < h < 250, (key, w, h))
+                self.assertTrue(80 < w < 360 and 60 < h < 250, (key, w, h))
+                dog.p.update(belly=0.0, hop=120.0)
+                self.assertTrue(dog.fit(dog.rig()) and dog.window_size()[1] > h, key)  # salto: la finestra cresce
 
     def test_look_at_camera_turns_head_toward_viewer(self):
         dog = dog3d.Dog("golden")

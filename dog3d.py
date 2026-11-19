@@ -342,20 +342,25 @@ class Dog:
     def head_world(self, rig):
         return add(mat_vec(rig["body_rot"], rig["head_pos"]), rig["root"])
 
+    def fit(self, rig):
+        """Allarga l'ingombro se questa posa (salto, pancia all'aria, rotolata) esce dalla finestra. True se è cresciuto."""
+        pts = [add(mat_vec(rig["body_rot"], v), rig["root"])
+               for v in (rig["chest"], rig["hip"], rig["neck0"], *rig["legs"], *rig["tail"], rig["head_pos"])]
+        R = self.b["R"]
+        reach = max(math.hypot(p[0], p[2]) for p in pts) + R * 1.6 + self.b["muzzle"]
+        top = max(p[1] for p in pts) + R * 1.9
+        old = self.extent or (0.0, 0.0)
+        self.extent = (max(old[0], reach), max(old[1], top))
+        return self.extent != old
+
     def window_size(self):
         """Dimensione della finestra (px) sufficiente per ogni orientamento e posa."""
         if self.extent is None:
             saved = dict(self.p)
-            self.p.update(POSE_DEFAULTS)
-            self.p["ears"] = 1.0
-            self.p["tailUp"] = 1.0
-            rig = self.rig()
-            pts = [rig["chest"], rig["hip"], rig["neck0"], *rig["legs"], *rig["tail"], rig["head_pos"]]
-            R = self.b["R"]
-            reach = max(math.hypot(p[0], p[2]) for p in pts) + R * 1.6 + self.b["muzzle"]
-            top = max(p[1] for p in pts) + R * 1.9
+            for pose in ({}, {"belly": 1.0}):  # in piedi e a pancia all'aria: le pose più alte e più larghe
+                self.p.update(POSE_DEFAULTS, ears=1.0, tailUp=1.0, **pose)
+                self.fit(self.rig())
             self.p = saved
-            self.extent = (reach, top)
         reach, top = self.extent
         w = int(2 * reach + 24)
         h = int(top * math.cos(ELEVATION) + reach * math.sin(ELEVATION) + 26 + BASE)

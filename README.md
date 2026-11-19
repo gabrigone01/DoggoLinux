@@ -29,11 +29,12 @@ Ubuntu 24.04 o successivo.
 
 Windows 10 o 11.
 
-1. **Scarica** [Doggo-windows.exe](https://github.com/gabrigone01/DoggoLinux/releases/latest/download/Doggo-windows.exe) e mettilo dove vuoi (per esempio in `Documenti\Doggo`).
-2. **Avvia** con un doppio clic. Il programma non è firmato digitalmente, quindi al primo avvio Windows SmartScreen può mostrare «Windows ha protetto il PC»: clicca **Ulteriori informazioni → Esegui comunque**.
-3. Il primo avvio richiede qualche secondo (il programma si scompatta).
+1. **Scarica** [Doggo-windows-setup.exe](https://github.com/gabrigone01/DoggoLinux/releases/latest/download/Doggo-windows-setup.exe) e aprilo. Non servono permessi di amministratore.
+2. Il programma non è firmato digitalmente, quindi Windows SmartScreen può mostrare «Windows ha protetto il PC»: clicca **Ulteriori informazioni → Esegui comunque**.
+3. **Avvia** dal menu Start → **Doggo** (o dalla spunta alla fine dell'installazione).
 
-**Disinstallare**: togli l'avvio automatico dal menu del cane, poi cancella `Doggo-windows.exe` e la cartella `%APPDATA%\Doggo`.
+**Aggiornare**: scarica il nuovo setup e aprilo. Chiude da solo il cane se è aperto e sostituisce la versione vecchia, anche il vecchio `Doggo-windows.exe` portatile se era nell'avvio automatico. Impostazioni, nome e chiave API restano.
+**Disinstallare**: Impostazioni → App → **Doggo** → Disinstalla. Le impostazioni restano in `%APPDATA%\Doggo`.
 
 ## Installazione su macOS
 
@@ -65,7 +66,7 @@ Gemini si usa con chiamate REST dirette: non serve installare nessun SDK.
 
 ## Pubblicare una nuova versione
 
-A ogni tag `v…` GitHub Actions costruisce `.deb` (Linux), `.exe` (Windows) e `.app` (macOS) e li allega alla Release (`.github/workflows/release.yml`):
+A ogni tag `v…` GitHub Actions costruisce `.deb` (Linux), l'installer `.exe` (Windows, `packaging/doggo.iss`) e `.app` (macOS) e li allega alla Release (`.github/workflows/release.yml`):
 
 ```bash
 git tag v1.0.1
@@ -134,6 +135,7 @@ Crea una chiave gratuita su <https://aistudio.google.com/apikey>, poi:
 - `kwin_bridge.py`: cursore e schermi da KWin su Wayland
 - `ai_handler.py`: client Gemini e traduzione delle emozioni in azioni
 - `packaging/build-deb.sh`: costruisce il pacchetto `.deb`
+- `packaging/doggo.iss`: installer Windows (Inno Setup)
 - `test_pet.py`: test (`python3 test_pet.py`)
 
 ## Limiti noti
