@@ -312,7 +312,8 @@ class BrainTest(unittest.TestCase):
                 brain.activity = "wander"
                 for _ in range(30 * 120):
                     brain.update(1 / 30)
-                    corners = [(brain.x + sx * (w / 2 - 1), brain.y + dog3d.BASE - dy) for sx in (-1, 1) for dy in (1, h - 1)]
+                    corners = [(brain.x + sx * (w / 2 - 1), y) for sx in (-1, 1)  # in alto la finestra vera, in basso il cane
+                               for y in (brain.y + brain.dog.below - h + 1, brain.y + dog3d.BASE - 1)]
                     self.assertTrue(all(areas.at(*c) is not None for c in corners), (key, gx, gy, brain.x, brain.y))
                     if brain.goal is None:
                         break
@@ -550,18 +551,34 @@ class ShaderTest(unittest.TestCase):
         vao.create()
         f = view3d.gl_functions(ctx)
         dog = dog3d.Dog("maremmano")
-        w, h = dog.window_size()
-        fbo = QOpenGLFramebufferObject(w, h, QOpenGLFramebufferObjectFormat())
-        fbo.bind()
-        f.glViewport(0, 0, w, h)
-        prog.bind()
-        view3d.set_common(prog, w, h, 0)
-        view3d.set_dog_uniforms(prog, dog, dog.rig())
-        vao.bind()
-        f.glDrawArrays(view3d.GL_TRIANGLES, 0, 3)
-        img = fbo.toImage()
+
+        def render():
+            w, h = dog.window_size()
+            fbo = QOpenGLFramebufferObject(w, h, QOpenGLFramebufferObjectFormat())
+            fbo.bind()
+            f.glViewport(0, 0, w, h)
+            f.glClearColor(0, 0, 0, 0)
+            f.glClear(0x4000)  # GL_COLOR_BUFFER_BIT
+            prog.bind()
+            view3d.set_common(prog, w, h, 0, base=dog.below)
+            view3d.set_dog_uniforms(prog, dog, rig)
+            vao.bind()
+            f.glDrawArrays(view3d.GL_TRIANGLES, 0, 3)
+            return fbo.toImage(), w, h
+
+        rig = dog.rig()
+        img, w, h = render()
         opaque = sum(img.pixelColor(x, y).alpha() == 255 for x in range(0, w, 3) for y in range(0, h, 3))
         self.assertGreater(opaque, 150)
+        # pancia all'aria girato in ogni direzione: niente di opaco sui bordi della finestra (cane tagliato)
+        dog.p.update(belly=1.0)
+        for deg in range(0, 360, 30):
+            dog.yaw = math.radians(deg)
+            rig = dog.rig()
+            dog.fit(rig)
+            img, w, h = render()
+            edge = [(x, y) for x in range(w) for y in (0, h - 1)] + [(x, y) for y in range(h) for x in (0, w - 1)]
+            self.assertFalse(any(img.pixelColor(x, y).alpha() > 40 for x, y in edge), deg)
 
     def test_shader_works_with_opengl_3_0(self):
         # PC con driver vecchi o macchine virtuali: contesto 3.0, GLSL 1.30, funzioni del profilo 2.0

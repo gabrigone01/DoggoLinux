@@ -1259,7 +1259,7 @@ class Brain:
     def margins(self):
         """Margini perché la finestra del cane resti dentro lo schermo: (lati, sopra, sotto)."""
         w, h = self.dog.window_size()
-        return w / 2 + 4, h - dog3d.BASE + 4, dog3d.BASE + 2
+        return w / 2 + 4, h - self.dog.below + 4, dog3d.BASE + 2  # sotto: il cane arriva al fondo, la finestra trasparente può uscire un po'
 
     def here(self):
         return self.areas.nearest(self.x, self.y)

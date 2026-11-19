@@ -588,7 +588,7 @@ class Pet(QObject):
             self._mask = None
         w, h = self.view.width(), self.view.height()
         self.view.dog, self.view.rig = self.dog, rig
-        self.view.move(int(self.brain.x - w / 2), int(self.brain.y + dog3d.BASE - h))
+        self.view.move(int(self.brain.x - w / 2), int(self.brain.y + self.dog.below - h))
         in_front = self.brain.y >= self.kennel_pos[1]  # chi è più in basso sullo schermo è più vicino a te
         if in_front != self.dog_in_front:
             self.dog_in_front = in_front
@@ -625,7 +625,7 @@ class Pet(QObject):
         v.rig = f.dog.rig()
         if f.dog.fit(v.rig):
             v.resize(*f.dog.window_size())
-        v.move(int(f.x - v.width() / 2), int(f.y + dog3d.BASE - v.height()))
+        v.move(int(f.x - v.width() / 2), int(f.y + f.dog.below - v.height()))
         v.show()
         front = f.y >= self.brain.y  # chi è più in basso sta davanti
         if front != self.friend_in_front:
@@ -652,7 +652,7 @@ class Pet(QObject):
         for pt in self.dog.points(rig):
             sx, sy = dog3d.project(pt)
             xs.append(w / 2 + sx)
-            ys.append(h - dog3d.BASE - sy)
+            ys.append(h - self.dog.below - sy)
         m = self.dog.b["R"] * 1.3
         q = 6
         x0, x1 = int(min(xs) - m) // q * q, int(max(xs) + m) // q * q + q

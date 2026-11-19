@@ -168,6 +168,7 @@ class Dog:
         self.tT = self.tS = max((b_hh - self.meta * 0.97 - b["legR"] * 0.9) / 1.8, 2.0)
         self.Hh = b_hh
         self.extent = None
+        self.below = BASE  # pixel della finestra sotto il punto a terra (le parti verso di te scendono sotto)
 
     # ------------------------------------------------------------ animazione
     def step(self, dt):
@@ -324,9 +325,17 @@ class Dog:
 
         roll = math.sin(self.t * 26) * 0.35 * P["shake"] - 2.6 * P["belly"] + math.sin(self.t * 2.2) * 0.12 * P["belly"]
         body_rot = mat_mul(rot_yaw(self.yaw), rot_roll(roll))
-        lift_belly = P["belly"] * rc * 1.75  # ruotato sulla schiena il torace scende sotto terra: lo rialzo
+        root = (0.0, P["hop"], 0.0)
+        if P["belly"] > 0.001:
+            # il rotolamento gira attorno al punto a terra: il torace scivolerebbe di lato e sotto il pavimento.
+            # Lo riporto sul posto, con schiena e testa appoggiate a terra (la testa affonda appena nel pelo).
+            c = mul(add(chest, hip), 0.5)
+            c_rot, c_up = mat_vec(body_rot, c), mat_vec(rot_yaw(self.yaw), c)
+            head_dy = mat_vec(body_rot, head_pos)[1] - c_rot[1]
+            target = (c_up[0], max(rc * 1.05, R * 0.5 - head_dy), c_up[2])
+            root = add(root, mul(sub(target, c_rot), P["belly"]))
         return dict(chest=chest, hip=hip, legs=legs, neck0=neck0, head_pos=head_pos, head_rot=head_rot,
-                    tail=tail, ears=ears, ear_dims=dims, body_rot=body_rot, root=(0.0, P["hop"] + lift_belly, 0.0),
+                    tail=tail, ears=ears, ear_dims=dims, body_rot=body_rot, root=root,
                     carry=self.carry)
 
     # ------------------------------------------------------------ proiezione
@@ -349,9 +358,11 @@ class Dog:
         R = self.b["R"]
         reach = max(math.hypot(p[0], p[2]) for p in pts) + R * 1.6 + self.b["muzzle"]
         top = max(p[1] for p in pts) + R * 1.9
-        old = self.extent or (0.0, 0.0)
-        self.extent = (max(old[0], reach), max(old[1], top))
-        return self.extent != old
+        below = int(max(-project(p)[1] for p in self.points(rig)) + R * 1.3)  # stesso margine della maschera dei clic
+        old = (self.extent or (0.0, 0.0)), self.below
+        self.extent = (max(old[0][0], reach), max(old[0][1], top))
+        self.below = max(self.below, below)
+        return (self.extent, self.below) != old
 
     def window_size(self):
         """Dimensione della finestra (px) sufficiente per ogni orientamento e posa."""
@@ -363,7 +374,7 @@ class Dog:
             self.p = saved
         reach, top = self.extent
         w = int(2 * reach + 24)
-        h = int(top * math.cos(ELEVATION) + reach * math.sin(ELEVATION) + 26 + BASE)
+        h = int(top * math.cos(ELEVATION) + reach * math.sin(ELEVATION) + 26 + self.below)
         return w, h
 
 

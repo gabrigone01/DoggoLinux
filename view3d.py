@@ -66,9 +66,9 @@ def _rgb(hexcolor):
     return QVector3D(c.redF(), c.greenF(), c.blueF())
 
 
-def set_common(prog, w, h, scene, zoom=1.0):
+def set_common(prog, w, h, scene, zoom=1.0, base=dog3d.BASE):
     prog.setUniformValue("uRes", QVector2D(float(w), float(h)))
-    prog.setUniformValue("uBase", float(dog3d.BASE * zoom))
+    prog.setUniformValue("uBase", float(base * zoom))
     prog.setUniformValue("uElev", float(dog3d.ELEVATION))
     prog.setUniformValue("uScene", int(scene))
     prog.setUniformValue("uZoom", float(zoom))
@@ -164,7 +164,8 @@ class SceneView(QOpenGLWidget):
             return
         self.prog.bind()
         dpr = self.devicePixelRatioF()  # Retina / scala di Windows: lo shader conta pixel fisici
-        set_common(self.prog, self.width() * dpr, self.height() * dpr, self.scene, dpr)
+        set_common(self.prog, self.width() * dpr, self.height() * dpr, self.scene, dpr,
+                   self.dog.below if self.scene == 0 else dog3d.BASE)
         if self.scene == 0:
             set_dog_uniforms(self.prog, self.dog, self.rig)
         else:
