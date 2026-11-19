@@ -363,6 +363,17 @@ class BrainTest(unittest.TestCase):
             self.assertIn("bark", self.brain.sfx)
             self.assertIn("chirp" if kind == "birds" else "hiss", self.brain.sfx)
 
+    def test_christmas_santa_is_barked_away_and_snowman_knocked_down(self):
+        self.brain.xmas = True
+        self.brain.scene("santa")
+        self.assertTrue(self.run_until(lambda: not self.brain.critters and self.brain.activity != "guard", 120))
+        self.assertIn("bark", self.brain.sfx)
+        self.assertIn("jingle", self.brain.sfx)
+        self.brain.scene("snowman")
+        snowman = self.brain.snowmen[0]
+        self.assertTrue(self.run_until(lambda: snowman["down"] is not None, 60))
+        self.assertTrue(self.run_until(lambda: self.brain.activity == "roll", 2))  # e poi si rotola nella neve
+
     def test_chases_a_butterfly(self):
         self.brain.scene("butterfly")
         self.assertTrue(self.run_until(lambda: self.brain.phase == "play", 20))

@@ -32,6 +32,8 @@ uniform float uBound;
 
 uniform vec3 uWood, uRoof;
 uniform float uKScale;
+uniform int uXmas;           // cuccia di Natale: neve, luci, vischio, comignolo che fuma
+uniform float uTime;
 
 // ------------------------------------------------------------------ utilità
 float hash(vec3 p) {
@@ -223,13 +225,23 @@ vec2 mapDog(vec3 pw) {
 }
 
 // ------------------------------------------------------------------ cuccia
+const float KW = 30.0, KD = 27.0, KH = 42.0, KROOF = 22.0;
+vec3 roofR(vec3 p) {  // spazio di una falda del tetto: x lungo la falda (verso la gronda), y fuori dal tetto
+    float ang = atan(KROOF, KW);
+    vec3 r = vec3(abs(p.x), p.y, p.z) - vec3(KW * 0.5, KH + KROOF * 0.5 + 1.5, 0.0);
+    return vec3(cos(ang) * r.x - sin(ang) * r.y, sin(ang) * r.x + cos(ang) * r.y, r.z);
+}
+vec3 rotZ(vec3 q, float a) { return vec3(cos(a) * q.x - sin(a) * q.y, sin(a) * q.x + cos(a) * q.y, q.z); }
+float bulbIndex(vec3 r) { return clamp(floor(r.x / 4.2 + 0.5), -5.0, 5.0); }
+const vec3 CHIMNEY = vec3(15.0, KH + KROOF * 0.6, -9.0);  // centro del comignolo (mezza altezza KROOF * 0.45)
+
 vec2 mapKennel(vec3 pw) {
     float s = uKScale;
     vec3 p = pw / s;
     float a = radians(-10.0);  // porta quasi di fronte
     p = vec3(cos(a) * p.x + sin(a) * p.z, p.y, -sin(a) * p.x + cos(a) * p.z);
     p.z += 6.0;
-    float W = 30.0, D = 27.0, H = 42.0, roofH = 22.0;
+    float W = KW, D = KD, H = KH, roofH = KROOF;
     float walls = sdBox(p - vec3(0.0, H * 0.5, 0.0), vec3(W, H * 0.5, D));
     walls = max(walls, -sdBox(p - vec3(0.0, H * 0.5 + 2.5, 0.0), vec3(W - 2.5, H * 0.5, D - 2.5)));
     float dw = 10.5, dh = 25.0;
@@ -241,14 +253,31 @@ vec2 mapKennel(vec3 pw) {
                       (abs(p.x) / W + (p.y - H) / roofH - 1.0) * 12.0);
     gable = max(gable, -sdBox(p - vec3(0.0, H + roofH * 0.5, 0.0), vec3(W, roofH, D - 2.5)));
     walls = min(walls, gable);
-    vec3 rp = vec3(abs(p.x), p.y, p.z);
-    float ang = atan(roofH, W);
-    vec3 c = vec3(W * 0.5, H + roofH * 0.5 + 1.5, 0.0);
-    vec3 r = rp - c;
-    r = vec3(cos(ang) * r.x - sin(ang) * r.y, sin(ang) * r.x + cos(ang) * r.y, r.z);
+    vec3 r = roofR(p);
     float roof = sdBox(r, vec3(sqrt(W * W + roofH * roofH) * 0.5 + 5.0, 1.6, D + 5.0)) - 0.4;
     float base = sdBox(p - vec3(0.0, 1.0, 0.0), vec3(W + 1.5, 1.0, D + 1.5));
     vec2 res = opU(vec2(min(walls, base), 11.0), vec2(roof, 12.0));
+    if (uXmas == 1) {
+        float hl = sqrt(W * W + roofH * roofH) * 0.5;
+        // neve morbida sulle falde e sul comignolo di mattoni
+        float snow = sdBox(r - vec3(0.0, 2.3, 0.0), vec3(hl + 4.6, 0.9 + 0.7 * noise(p * 0.35), D + 4.6)) - 0.9;
+        vec3 cp = p - CHIMNEY;
+        snow = min(snow, sdBox(cp - vec3(0.0, roofH * 0.45 + 0.9, 0.0), vec3(4.0, 0.7 + 0.4 * noise(p), 4.0)) - 0.7);
+        res = opU(res, vec2(snow, 20.0));
+        res = opU(res, vec2(sdBox(cp, vec3(3.6, roofH * 0.45, 3.6)) - 0.3, 21.0));
+        // filo di lucine sotto la gronda davanti
+        vec3 lp = r - vec3(bulbIndex(r) * 4.2, -3.1, D + 4.4);
+        res = opU(res, vec2(sdEllipsoid(lp, vec3(1.0, 1.4, 1.0)), 22.0));
+        res = opU(res, vec2(sdBox(r - vec3(0.0, -2.1, D + 4.4), vec3(hl + 3.0, 0.25, 0.25)), 23.0));
+        // vischio appeso sopra la porta: due foglie, tre bacche bianche e un fiocco rosso
+        vec3 mp = p - vec3(0.0, 38.6, D + 1.4);
+        float leaf = min(sdEllipsoid(rotZ(mp - vec3(-2.0, -1.2, 0.0), 0.55), vec3(3.0, 1.1, 0.6)),
+                         sdEllipsoid(rotZ(mp - vec3(2.0, -1.2, 0.0), -0.55), vec3(3.0, 1.1, 0.6)));
+        res = opU(res, vec2(leaf, 24.0));
+        vec3 bq = vec3(abs(mp.x), mp.y, mp.z);
+        res = opU(res, vec2(min(length(bq - vec3(0.8, -1.5, 0.9)) - 0.85, length(mp - vec3(0.0, -2.5, 1.0)) - 0.85), 25.0));
+        res = opU(res, vec2(sdEllipsoid(rotZ(bq - vec3(1.3, 1.0, 0.6), 0.4), vec3(1.5, 0.9, 0.6)), 26.0));
+    }
     vec3 bp = p - vec3(40.0, 0.0, 22.0);  // ciotola davanti a destra
     float bowl = max(sdEllipsoid(bp - vec3(0.0, 1.0, 0.0), vec3(9.0, 5.5, 9.0)), bp.y - 4.6);
     bowl = max(bowl, -sdEllipsoid(bp - vec3(0.0, 5.2, 0.0), vec3(7.6, 4.0, 7.6)));
@@ -323,6 +352,23 @@ float groundShadow(vec3 g) {
 }
 
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
+
+vec4 smoke(vec2 sp) {  // fumo del comignolo: sbuffi 2D che salgono, si allargano e svaniscono (alpha premoltiplicato)
+    if (uScene != 1 || uXmas == 0) return vec4(0.0);
+    float a = radians(-10.0);
+    vec3 k = vec3(CHIMNEY.x, CHIMNEY.y + KROOF * 0.45 + 1.5, CHIMNEY.z - 6.0);  // in cima, nello spazio della cuccia
+    vec3 c = vec3(cos(a) * k.x - sin(a) * k.z, k.y, sin(a) * k.x + cos(a) * k.z) * uKScale;
+    vec2 top = vec2(c.x, c.y * cos(uElev) - c.z * sin(uElev));
+    float acc = 0.0;
+    for (int i = 0; i < 6; i++) {
+        float ph = fract(uTime * 0.22 + float(i) / 6.0);
+        vec2 pc = top + vec2(ph * 10.0 + sin(uTime * 1.3 + float(i) * 2.1) * 2.0 * ph, ph * 34.0) * uKScale;
+        float d = length(sp - pc) / ((2.2 + ph * 5.5) * uKScale);
+        acc += 0.42 * (1.0 - ph) * smoothstep(0.0, 0.12, ph) * (1.0 - smoothstep(0.4, 1.0, d));
+    }
+    acc = clamp(acc, 0.0, 0.75);
+    return vec4(vec3(0.82, 0.83, 0.86) * acc, acc);
+}
 
 vec3 dogAlbedo(vec3 pw, float m) {
     vec3 p = transpose(uBodyRot) * (pw - uRoot);
@@ -415,6 +461,26 @@ vec3 kennelAlbedo(vec3 pw, float m) {
     float a = radians(-10.0);
     k = vec3(cos(a) * k.x + sin(a) * k.z, k.y, -sin(a) * k.x + cos(a) * k.z);
     k.z += 6.0;
+    if (m == 20.0) return lin(vec3(0.93, 0.95, 1.0)) * (0.93 + 0.07 * noise(p * 1.7));  // neve
+    if (m == 21.0) {  // mattoni del comignolo
+        float row = k.y / 2.0;
+        float bx = fract((k.x + k.z) / 4.0 + 0.5 * mod(floor(row), 2.0));
+        float mortar = max(step(fract(row), 0.14), step(bx, 0.08));
+        return lin(mix(vec3(0.6, 0.22, 0.15), vec3(0.78, 0.75, 0.7), mortar));
+    }
+    if (m == 22.0) {  // lucine colorate che si accendono a onda
+        vec3 r = roofR(k);
+        float side = step(0.0, k.x);
+        float i = bulbIndex(r);
+        float c = mod(i + 5.0 + side * 2.0, 4.0);
+        vec3 col = c < 1.0 ? vec3(1.0, 0.12, 0.08) : c < 2.0 ? vec3(0.15, 1.0, 0.2) : c < 3.0 ? vec3(1.0, 0.75, 0.1) : vec3(0.2, 0.4, 1.0);
+        float on = step(fract(uTime * 0.8 - i * 0.22 - side * 0.5), 0.6);
+        return col * mix(0.2, 1.5, on);
+    }
+    if (m == 23.0) return lin(vec3(0.06, 0.14, 0.07));  // filo
+    if (m == 24.0) return lin(vec3(0.24, 0.48, 0.17));  // foglie di vischio
+    if (m == 25.0) return lin(vec3(0.96, 0.95, 0.88));  // bacche
+    if (m == 26.0) return lin(vec3(0.82, 0.07, 0.1));   // fiocco
     if (m == 11.0 && abs(k.x) < 28.0 && abs(k.z) < 25.0 && k.y > 2.1 && k.y < 41.0) return lin(vec3(0.09, 0.06, 0.04));  // interno in ombra
     if (m == 15.0) return lin(vec3(0.72, 0.16, 0.12)) * (0.9 + 0.1 * noise(p));  // ciotola smaltata
     if (m == 17.0) return lin(vec3(0.3, 0.55, 0.8));  // acqua
@@ -461,7 +527,7 @@ void main() {
         float tg = -ro.y / rd.y;
         float a = groundShadow(ro + rd * tg);
         ground = vec4(0.0, 0.0, 0.0, a);
-        if (!hit) { fragColor = ground; return; }
+        if (!hit) { vec4 sm = smoke(sp); fragColor = sm + ground * (1.0 - sm.a); return; }
     }
     vec3 pos = ro + rd * t;
     vec3 n = calcNormal(pos);
@@ -485,6 +551,8 @@ void main() {
         if (m == 6.0) col += vec3(1.0) * smoothstep(0.975, 0.99, dot(n, normalize(vec3(-0.3, 0.55, 1.0)))) * 0.8;  // riflesso vivo negli occhi
     }
     col *= mix(0.75, 1.0, ao);
+    if (m == 22.0) col = alb;  // le lucine fanno luce da sole
     col = clamp(pow(max(col, 0.0), vec3(1.0 / 2.2)), 0.0, 1.0);  // >1 romperebbe l'alpha premoltiplicato
-    fragColor = vec4(col, 1.0) * cover + ground * (1.0 - cover);  // alpha premoltiplicato
+    vec4 sm = smoke(sp);
+    fragColor = sm + (vec4(col, 1.0) * cover + ground * (1.0 - cover)) * (1.0 - sm.a);  // alpha premoltiplicato
 }

@@ -110,16 +110,18 @@ def set_dog_uniforms(prog, dog, rig):
     u("uBound", float(max(dog3d.length(dog3d.sub(p, c)) for p in pts) + b["R"] * 1.8 + b["muzzle"]))
 
 
-def set_kennel_uniforms(prog, b, food=1.0):
+def set_kennel_uniforms(prog, b, food=1.0, xmas=False, t=0.0):
+    prog.setUniformValue("uXmas", int(xmas))
+    prog.setUniformValue("uTime", float(t))
     prog.setUniformValue("uWood", _rgb(b["wood"]))
     prog.setUniformValue("uRoof", _rgb(b["roof"]))
     prog.setUniformValue("uKScale", float(b["kscale"]))
     prog.setUniformValue("uFood", float(food))
 
 
-def kennel_size(b):
+def kennel_size(b, xmas=False):
     s = b["kscale"]
-    return int(125 * s), int(105 * s) + dog3d.BASE
+    return int(125 * s), int((105 + 30 * xmas) * s) + dog3d.BASE  # a Natale più spazio sopra per il fumo
 
 
 class SceneView(QOpenGLWidget):
@@ -134,6 +136,7 @@ class SceneView(QOpenGLWidget):
         self.prog = self.vao = self.gl = None
         self.dog = self.rig = self.breed = None
         self.food = 1.0
+        self.xmas, self.time = False, 0.0
         self.error = None
 
     def initializeGL(self):
@@ -169,7 +172,7 @@ class SceneView(QOpenGLWidget):
         if self.scene == 0:
             set_dog_uniforms(self.prog, self.dog, self.rig)
         else:
-            set_kennel_uniforms(self.prog, self.breed, self.food)
+            set_kennel_uniforms(self.prog, self.breed, self.food, self.xmas, self.time)
         self.vao.bind()
         f.glDrawArrays(GL_TRIANGLES, 0, 3)
         self.vao.release()

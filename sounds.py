@@ -188,12 +188,21 @@ def make(name, p):
         return out
     if name == "hiss":  # il gatto soffia
         return envelope(bandpass(noise(0.7, rng), 4500, 0.7), 0.04, None, 0.25)
+    if name == "jingle":  # sonagli della slitta: colpetti metallici fitti e inarmonici
+        out = []
+        for k in range(14):
+            f0 = rng.uniform(2600, 3400)
+            n = int(0.18 * RATE)
+            ring = [math.exp(-i / (0.04 * RATE)) * (math.sin(2 * math.pi * f0 * i / RATE)
+                                                     + 0.6 * math.sin(2 * math.pi * f0 * 2.76 * i / RATE)) for i in range(n)]
+            place(out, ring, k * 0.075 + rng.uniform(0, 0.02))
+        return envelope(out, 0.005, None, 0.2)
     raise KeyError(name)
 
 
 NAMES = ["bark", "yip", "whine", "howl", "growl", "pant", "yawn", "sniff", "lick", "shake", "scratch", "dig",
-         "crunch", "snore", "bounce", "clack", "thud", "chirp", "hiss"]
-VOLUME = dict(snore=0.5, sniff=0.7, lick=0.6, pant=0.7, bounce=0.8, clack=0.8, thud=0.9, chirp=0.5, hiss=0.7)
+         "crunch", "snore", "bounce", "clack", "thud", "chirp", "hiss", "jingle"]
+VOLUME = dict(snore=0.5, sniff=0.7, lick=0.6, pant=0.7, bounce=0.8, clack=0.8, thud=0.9, chirp=0.5, hiss=0.7, jingle=0.5)
 
 
 def read_wav(path):

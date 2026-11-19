@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Desktop Virtual Pet: un cane in 3D che vive sui tuoi schermi e chiacchiera via Gemini."""
+import faulthandler
 import json
 import math
 import os
@@ -39,7 +40,7 @@ else:
     AUTOSTART = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "autostart" / "doggo.desktop"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"  # avvio automatico su Windows
 DEFAULTS = {"breed": dog3d.DEFAULT_BREED, "name": "", "kennel": "right", "windows": True, "sounds": True, "api_key": "",
-            "model": "gemini-flash-latest"}
+            "model": "gemini-flash-latest", "christmas": False}
 FLAGS = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
 
 
@@ -79,7 +80,24 @@ def setup_log():
         return
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     sys.stdout = sys.stderr = open(LOG_PATH, "w", buffering=1, encoding="utf-8")
+    faulthandler.enable(sys.stderr)  # crash nativi (driver della scheda video): almeno la traccia nel log
+    sys.excepthook = show_error
     qInstallMessageHandler(lambda _mode, _ctx, msg: print(msg))
+
+
+def show_error(kind, err, tb):
+    """Senza console un errore chiuderebbe il cane in silenzio: lo scrivo nel log, lo mostro ed esco."""
+    import traceback
+    text = "".join(traceback.format_exception(kind, err, tb))
+    print(text)
+    msg = f"Doggo si è fermato per un errore.\n\n{text[-1500:]}\nDettagli in: {LOG_PATH}"
+    if sys.platform == "win32":  # funziona anche prima che Qt sia partito
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, msg, "Doggo", 0x10)
+    elif QApplication.instance():
+        QMessageBox.critical(None, "Doggo", msg)
+    sys.stdout.flush()
+    os._exit(1)  # niente finestre di errore a ripetizione a ogni fotogramma
 
 
 def launch_command():
@@ -306,7 +324,10 @@ class CritterWindow(QWidget):
         if c is None:
             self.hide()
             return
-        self.move(int(c.x - self.W / 2), int(c.y - c.h - self.GROUND))
+        w, ground = (190, 120) if c.kind == "santa" else (self.W, self.GROUND)  # slitta con le renne
+        if self.width() != w:
+            self.resize(w, ground + 20)
+        self.move(int(c.x - w / 2), int(c.y - c.h - ground))
         self.show()
         self.update()
 
@@ -316,11 +337,11 @@ class CritterWindow(QWidget):
             return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.translate(self.W / 2, self.GROUND)
+        p.translate(self.width() / 2, self.height() - 20)
         if c.h < 60:  # ombra a terra
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(0, 0, 0, int(60 * (1 - c.h / 60))))
-            w = 28 if c.kind == "cat" else 10
+            w = dict(cat=28, santa=150).get(c.kind, 10)
             p.drawEllipse(QRectF(-w / 2, c.h - 1.5, w, 4))
         p.scale(c.face, 1)
         getattr(self, "draw_" + c.kind)(p, c)
@@ -398,6 +419,62 @@ class CritterWindow(QWidget):
             p.setBrush(QColor("#5A1E1E"))
             p.drawEllipse(QPointF(hx + 5, hy + 3.5), 1.8, 1.4)
 
+    def draw_santa(self, p, c):
+        """Slitta rossa con Babbo Natale e due renne davanti (verso +x)."""
+        flying = c.h > 2 or c.state in ("scared", "flee")
+        run = math.sin(c.t * (16 if flying else 6)) * (5 if flying or c.state == "arrive" else 0.6)
+        ink = QPen(QColor(40, 25, 20), 0.8)
+        for k, rx in enumerate((38, 66)):  # renne
+            ph = run if k else -run
+            p.setPen(ink)
+            p.setBrush(QColor("#8B5A2B"))
+            for lx, s in ((-8, 1), (-4, -1), (6, 1), (10, -1)):
+                p.drawRect(QRectF(rx + lx + s * ph * 0.4, -14, 2.6, 14 - (abs(ph) * 0.5 if flying else 0)))
+            p.drawEllipse(QRectF(rx - 12, -26, 26, 13))
+            p.drawEllipse(QPointF(rx + 15, -31), 5.5, 4.5)
+            p.drawRect(QRectF(rx + 9, -30, 5, 8))  # collo
+            p.setPen(QPen(QColor("#5A3A1A"), 1.4))
+            for dx in (-1, 2):  # corna
+                p.drawLine(QPointF(rx + 14 + dx, -35), QPointF(rx + 12 + dx * 2, -43))
+                p.drawLine(QPointF(rx + 12 + dx * 2, -40), QPointF(rx + 9 + dx * 2, -42))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#E0262A") if k else QColor("#2A1A12"))  # la prima ha il naso rosso
+            p.drawEllipse(QPointF(rx + 20.5, -31), 1.8, 1.8)
+        p.setPen(QPen(QColor("#6B4A2A"), 0.9))
+        p.drawLine(QPointF(18, -22), QPointF(28, -22))  # finimenti
+        p.drawLine(QPointF(48, -22), QPointF(56, -22))
+        p.setPen(QPen(QColor("#C9A227"), 2.0))  # pattini
+        p.drawLine(QPointF(-40, -2), QPointF(18, -2))
+        p.drawArc(QRectF(12, -12, 12, 10), -90 * 16, 180 * 16)
+        p.setPen(ink)
+        p.setBrush(QColor("#7A2A1A"))
+        p.drawEllipse(QRectF(-42, -40, 18, 18))  # sacco dei regali
+        p.setBrush(QColor("#C8102E"))  # slitta
+        sled = QPainterPath()
+        sled.moveTo(-36, -6)
+        sled.lineTo(14, -6)
+        sled.quadTo(22, -10, 18, -24)
+        sled.lineTo(-22, -24)
+        sled.quadTo(-36, -24, -36, -6)
+        p.drawPath(sled)
+        p.setBrush(QColor("#C8102E"))  # Babbo Natale
+        p.drawEllipse(QRectF(-16, -40, 20, 20))
+        p.setBrush(QColor("#F3D2B5"))
+        p.drawEllipse(QPointF(-4, -45), 6, 6)
+        p.setBrush(QColor("white"))
+        p.drawEllipse(QPointF(-1, -41), 5, 4.5)  # barba
+        p.setBrush(QColor("#C8102E"))
+        hat = QPolygon([QPoint(-11, -49), QPoint(3, -49), QPoint(-14, -60)])
+        p.drawPolygon(hat)
+        p.setBrush(QColor("white"))
+        p.drawEllipse(QPointF(-14, -60), 2.2, 2.2)
+        p.drawRect(QRectF(-12, -51, 16, 3))
+        p.setBrush(QColor("black"))
+        p.drawEllipse(QPointF(-2, -46.5), 0.8, 0.8)
+        if c.state in ("scared", "flee"):  # agita il braccio: "ho ho, me ne vado!"
+            p.setPen(QPen(QColor("#C8102E"), 3.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(-6, -34), QPointF(-12 + 4 * math.sin(c.t * 18), -52))
+
     def draw_butterfly(self, p, c):
         flap = abs(math.sin(c.t * 14))
         col = QColor(self.WING[c.color])
@@ -414,6 +491,184 @@ class CritterWindow(QWidget):
         p.setPen(QPen(QColor(40, 30, 20), 0.6))
         p.drawLine(QPointF(0, -14), QPointF(2, -18))
         p.drawLine(QPointF(0, -14), QPointF(-2, -18))
+
+
+class SnowWindow(QWidget):
+    """Modalità Natale su uno schermo: fiocchi che cadono, neve a terra, alberi addobbati, pupazzi di neve,
+    buche e spruzzi quando il cane scava o si rotola. Sta sul fondo come uno sfondo animato: sotto la barra delle
+    applicazioni e le finestre (cane e cuccia restano sopra a tutto); i clic ci passano attraverso."""
+
+    def __init__(self, rect, pet):
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+                         | Qt.WindowType.WindowStaysOnBottomHint | Qt.WindowType.WindowTransparentForInput)
+        keep_visible(self)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setGeometry(QRect(*rect))
+        self.pet = pet
+        rng = pet.brain.rng
+        w, h = self.width(), self.height()
+        self.flakes = [[rng.uniform(0, w), rng.uniform(0, h), rng.uniform(1.0, 3.2), rng.uniform(0, 6.3)]
+                       for _ in range(max(40, w * h // 16000))]
+        self.drift = [rng.uniform(0, 1) for _ in range(w // 40 + 2)]  # gobbe della neve sul fondo
+        self.bits = []   # [x, y, h, vx, vy, vh, r] spruzzi di neve (coordinate globali)
+        self.marks = []  # [x, y, kind, t] buche e impronte di rotolate
+
+    def trees(self):
+        """Un solo albero, accanto alla cuccia, dal lato del centro dello schermo."""
+        g = self.geometry()
+        kx, ky = self.pet.kennel_pos
+        if not g.contains(int(kx), int(ky)):
+            return []
+        side = 1 if kx > g.center().x() else -1
+        return [(kx - side * (self.pet.kennel.width() * 0.5 + 40), ky - 6)]
+
+    def step(self, dt):
+        b, g = self.pet.brain, self.geometry()
+        w, h = self.width(), self.height()
+        for f in self.flakes:
+            f[3] += dt
+            f[1] += f[2] * 18 * dt
+            f[0] += math.sin(f[3] * 0.8 + f[2]) * 12 * dt
+            if f[1] > h:
+                f[0], f[1] = b.rng.uniform(0, w), -5
+        here = g.contains(int(b.x), int(b.y))
+        if here and b.activity in ("dig", "roll") and b.goal is None:
+            yaw = b.dog.yaw
+            if b.activity == "dig":  # spruzzi all'indietro, tra le zampe posteriori
+                fx, fy, back, n = b.x + math.cos(yaw) * 18, b.y + math.sin(yaw) * 9, yaw + math.pi, 3
+            else:  # rotolata: sbuffi tutto intorno
+                fx, fy, back, n = b.x, b.y, b.rng.uniform(0, math.tau), 2
+            for _ in range(n):
+                a = back + b.rng.uniform(-0.7, 0.7)
+                v = b.rng.uniform(60, 160)
+                self.bits.append([fx, fy, 4.0, math.cos(a) * v, math.sin(a) * v * 0.5, b.rng.uniform(120, 260),
+                                  b.rng.uniform(1.5, 3.5)])
+            kind = b.activity
+            if not self.marks or math.hypot(self.marks[-1][0] - b.x, self.marks[-1][1] - b.y) > 30 \
+                    or self.marks[-1][2] != kind:
+                self.marks.append([fx, fy, kind, b.t])
+        for s in b.snowmen:  # pupazzo appena travolto: palle di neve che volano
+            if s["down"] is not None and not s.get("burst") and g.contains(int(s["x"]), int(s["y"])):
+                s["burst"] = True
+                for _ in range(40):
+                    a = b.rng.uniform(0, math.tau)
+                    v = b.rng.uniform(60, 240)
+                    self.bits.append([s["x"], s["y"], b.rng.uniform(5, 40), math.cos(a) * v, math.sin(a) * v * 0.5,
+                                      b.rng.uniform(100, 320), b.rng.uniform(2, 6)])
+        for bit in self.bits:
+            bit[0] += bit[3] * dt
+            bit[1] += bit[4] * dt
+            bit[5] -= 900 * dt
+            bit[2] += bit[5] * dt
+        self.bits = [bit for bit in self.bits if bit[2] > 0][-400:]
+        self.marks = [m for m in self.marks if b.t - m[3] < 60][-60:]
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        g = self.geometry()
+        w, h = self.width(), self.height()
+        snow, shade = QColor(250, 252, 255, 150), QColor(200, 214, 232, 150)  # manto semitrasparente
+        # neve a terra sul fondo dello schermo, a gobbe
+        drift = QPainterPath()
+        drift.moveTo(0, h)
+        for i, k in enumerate(self.drift):
+            drift.lineTo(i * 40, h - 14 - 10 * k)
+        drift.lineTo(w, h)
+        drift.closeSubpath()
+        p.setPen(QPen(shade, 1.5))
+        p.setBrush(snow)
+        p.drawPath(drift)
+        p.translate(-g.x(), -g.y())  # da qui in coordinate globali
+        t = self.pet.brain.t
+        for x, y, kind, _ in self.marks:  # buche scavate e impronte delle rotolate
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(150, 170, 200, 150) if kind == "dig" else QColor(190, 205, 228, 120))
+            r = 11 if kind == "dig" else 22
+            p.drawEllipse(QPointF(x, y), r, r * 0.4)
+        for x, y in self.trees():
+            self.draw_tree(p, x, y, t)
+        for s in self.pet.brain.snowmen:
+            self.draw_snowman(p, s, t)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(snow)
+        for x, y, hh, *_, r in self.bits:
+            p.drawEllipse(QPointF(x, y - hh), r, r)
+        p.resetTransform()
+        p.setBrush(QColor(255, 255, 255, 220))
+        for x, y, r, _ in self.flakes:
+            p.drawEllipse(QPointF(x, y), r, r)
+
+    @staticmethod
+    def draw_tree(p, x, y, t):
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 50))
+        p.drawEllipse(QPointF(x, y), 34, 7)
+        p.setBrush(QColor("#5C3B1E"))
+        p.drawRect(QRectF(x - 5, y - 16, 10, 16))
+        for i, (wd, top, bot) in enumerate(((40, -70, -14), (32, -96, -50), (23, -118, -78))):
+            p.setBrush(QColor("#1F6B34").darker(100 + i * 8))
+            p.drawPolygon(QPolygon([QPoint(int(x - wd), int(y + bot)), QPoint(int(x + wd), int(y + bot)),
+                                    QPoint(int(x), int(y + top))]))
+            p.setBrush(QColor(250, 252, 255))  # neve sui rami
+            p.drawPolygon(QPolygon([QPoint(int(x - wd * 0.55), int(y + (top + bot) / 2 + 6)),
+                                    QPoint(int(x), int(y + top)), QPoint(int(x + wd * 0.55), int(y + (top + bot) / 2 + 6)),
+                                    QPoint(int(x), int(y + (top + bot) / 2))]))
+        cols = ("#E53935", "#FDD835", "#1E88E5", "#E040FB")
+        for i, (dx, dy) in enumerate(((-22, -24), (14, -30), (-6, -46), (20, -58), (-16, -64), (8, -84), (-8, -98))):
+            on = math.sin(t * 3 + i * 1.7) > -0.2
+            c = QColor(cols[i % 4])
+            p.setBrush(c if on else c.darker(220))
+            p.drawEllipse(QPointF(x + dx, y + dy), 3.4, 3.4)
+        star = QPainterPath()
+        for k in range(10):
+            a, r = -math.pi / 2 + k * math.pi / 5, 9 if k % 2 == 0 else 4
+            pt = QPointF(x + math.cos(a) * r, y - 122 + math.sin(a) * r)
+            star.moveTo(pt) if k == 0 else star.lineTo(pt)
+        star.closeSubpath()
+        p.setBrush(QColor("#FFD54F"))
+        p.drawPath(star)
+
+    @staticmethod
+    def draw_snowman(p, s, t):
+        x, y = s["x"], s["y"]
+        p.setPen(QPen(QColor(190, 205, 228), 1.2))
+        p.setBrush(QColor(250, 252, 255))
+        if s["down"] is not None:  # travolto: resta un mucchietto con la carota e il cappello
+            k = min((t - s["down"]) / 0.4, 1.0)
+            p.drawEllipse(QPointF(x, y - 6), 30 + 6 * k, 10)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#F57C00"))
+            p.drawPolygon(QPolygon([QPoint(int(x + 18), int(y - 6)), QPoint(int(x + 30), int(y - 4)),
+                                    QPoint(int(x + 18), int(y - 2))]))
+            p.setBrush(QColor("#222"))
+            p.drawRect(QRectF(x - 26, y - 14, 12, 8))
+            return
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 45))
+        p.drawEllipse(QPointF(x, y), 26, 6)
+        p.setPen(QPen(QColor(190, 205, 228), 1.2))
+        p.setBrush(QColor(250, 252, 255))
+        for r, cy in ((22, -20), (16, -54), (11, -78)):
+            p.drawEllipse(QPointF(x, y + cy), r, r)
+        p.setPen(QPen(QColor("#5C3B1E"), 2))  # braccia di rametto
+        p.drawLine(QPointF(x - 14, y - 56), QPointF(x - 32, y - 68))
+        p.drawLine(QPointF(x + 14, y - 56), QPointF(x + 32, y - 66 + 3 * math.sin(t * 2)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor("#222"))
+        for dx in (-4, 4):
+            p.drawEllipse(QPointF(x + dx, y - 81), 1.6, 1.6)
+        for dy in (-60, -50, -40):
+            p.drawEllipse(QPointF(x, y + dy), 1.8, 1.8)
+        p.drawRect(QRectF(x - 9, y - 90, 18, 3))  # cappello
+        p.drawRect(QRectF(x - 6, y - 104, 12, 14))
+        p.setBrush(QColor("#F57C00"))
+        p.drawPolygon(QPolygon([QPoint(int(x), int(y - 79)), QPoint(int(x + 13), int(y - 77)), QPoint(int(x), int(y - 75))]))
+        p.setBrush(QColor("#C62828"))  # sciarpa
+        p.drawRoundedRect(QRectF(x - 12, y - 69, 24, 5), 2, 2)
+        p.drawRect(QRectF(x + 4, y - 67, 5, 12))
 
 
 class FriendView(view3d.SceneView):
@@ -500,6 +755,7 @@ class Pet(QObject):
         self.friend_view = FriendView()
         self.friend_in_front = None
         self.pickers = []
+        self.snow = []  # finestre della neve, una per schermo (modalità Natale)
         self.reply_ready.connect(self.on_reply)
         if bridge:
             bridge.cursorMoved.connect(lambda x, y: setattr(self, "cursor", (x, y)))
@@ -512,6 +768,7 @@ class Pet(QObject):
         self.brain.place_home()
         self.kennel.show()
         self.view.show()
+        self.set_christmas(cfg["christmas"], save=False)
 
         self.clock = QElapsedTimer()
         self.clock.start()
@@ -539,6 +796,8 @@ class Pet(QObject):
         self.areas.rects = [tuple(r) for r in rects]
         self.brain.goal = None
         self.place_kennel()
+        if self.snow:  # schermi cambiati: neve da rifare
+            self.set_christmas(True, save=False)
         if self.areas.at(self.brain.x, self.brain.y) is None:
             self.brain.place_home()
 
@@ -562,9 +821,13 @@ class Pet(QObject):
         i = self.areas.at(kx, ky - 1)
         i = self.areas.nearest(kx, ky) if i is None else i
         kx, ky = self.areas.clamp(i, kx, ky, kw / 2, kh - dog3d.BASE, self.KENNEL_MARGIN * 0.4)
-        house = QPolygon([QPoint(int(kw * x), int(kh * y)) for x, y in
+        kh0 = view3d.kennel_size(self.dog.b)[1]  # a Natale la finestra è più alta: la casa resta in fondo
+        house = QPolygon([QPoint(int(kw * x), int(kh - kh0 * (1 - y))) for x, y in
                           ((0.12, 1.0), (0.12, 0.4), (0.5, 0.08), (0.88, 0.4), (0.88, 1.0))])
-        self.kennel.setMask(QRegion(house))  # clic solo sulla sagoma della casetta
+        mask = QRegion(house)  # clic solo sulla sagoma della casetta
+        if self.kennel.xmas:  # più il fumo del comignolo
+            mask = mask.united(QRegion(int(kw * 0.5), 0, int(kw * 0.4), int(kh - kh0 * 0.75)))
+        self.kennel.setMask(mask)
         self.kennel_pos = (kx, ky)
         self.kennel.move(int(kx - kw / 2), int(ky + dog3d.BASE - kh))
         # il cane si sdraia davanti alla porta, girato verso il centro dello schermo
@@ -604,9 +867,12 @@ class Pet(QObject):
         for name in self.brain.sfx:
             self.sound.play(name)
         self.brain.sfx = []
-        if abs(self.kennel.food - self.brain.food) > 0.03:
+        if abs(self.kennel.food - self.brain.food) > 0.03 or self.kennel.xmas:  # a Natale lucine e fumo si muovono
             self.kennel.food = self.brain.food
+            self.kennel.time = self.brain.t
             self.kennel.update()
+        for w in self.snow:
+            w.step(dt)
 
     def show_visitors(self):
         critters = self.brain.critters
@@ -812,6 +1078,10 @@ class Pet(QObject):
         menu.addAction("Lancia pallina", lambda: self.pick_throw("ball"))
         menu.addAction("Torna nella cuccia", self.brain.go_home)
         menu.addSeparator()
+        xmas = menu.addAction("Modalità Natale (neve, Babbo Natale, cuccia addobbata)")
+        xmas.setCheckable(True)
+        xmas.setChecked(self.cfg["christmas"])
+        xmas.triggered.connect(self.set_christmas)
         play = menu.addAction("Gioca con le finestre (ci sale sopra, le tira)")
         play.setCheckable(True)
         play.setChecked(self.cfg["windows"])
@@ -852,6 +1122,24 @@ class Pet(QObject):
             if under and w.geometry() == under.geometry():
                 w.activateWindow()
 
+    def set_christmas(self, on, save=True):
+        on = bool(on)
+        if on and not self.cfg["christmas"] and save:
+            self.brain.next_scene = self.brain.t + 15  # appena acceso: presto una scenetta (magari Babbo Natale)
+        self.cfg["christmas"] = self.brain.xmas = self.kennel.xmas = on
+        if not on:
+            self.brain.snowmen = []
+        for w in self.snow:
+            w.close()
+        self.snow = [SnowWindow(r, self) for r in self.areas.rects] if on else []
+        for w in self.snow:
+            w.show()
+        self.kennel.resize(*view3d.kennel_size(self.dog.b, on))
+        self.kennel.update()
+        self.place_kennel()
+        if save:
+            save_config(self.cfg)
+
     def toggle_sounds(self, on):
         self.cfg["sounds"] = self.sound.enabled = bool(on)
         save_config(self.cfg)
@@ -876,7 +1164,7 @@ class Pet(QObject):
             self.sound.set_breed(key)  # voce della razza
         self.view.resize(*self.dog.window_size())
         self.kennel.breed = self.dog.b
-        self.kennel.resize(*view3d.kennel_size(self.dog.b))
+        self.kennel.resize(*view3d.kennel_size(self.dog.b, self.kennel.xmas))
         self.kennel.update()
         self._mask = None
         self.chat = None  # nuova personalità, nuova conversazione

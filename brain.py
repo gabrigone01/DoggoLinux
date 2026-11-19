@@ -16,8 +16,9 @@ ACTIVITY_SOUND = dict(howl="howl", dig="dig", roll="pant", shake="shake", scratc
 TOWARD_CAMERA = (0.0, math.sin(dog3d.ELEVATION), math.cos(dog3d.ELEVATION))
 # scenette che capitano da sole ogni tanto, perché non si annoi (pesi)
 SCENES = dict(birds=5, cat=3, butterfly=4, friend=3, find=6)
+XMAS_SCENES = dict(santa=8, snowman=8)  # in più con la modalità Natale
 CALM = {"stand", "sit", "lie", "wander", "sniff", "sniffing", "sleep", "scratch", "stretch", "shake", "home"}
-VISITS = ("guard", "flutter", "friend", "visit")
+VISITS = ("guard", "flutter", "friend", "visit", "snowman")
 
 
 class Areas:
@@ -130,7 +131,7 @@ class Toy:
 
 class Critter:
     """Visita disegnata da main: uccellino, gatto o farfalla. (x, y) è il punto a terra, h l'altezza in volo."""
-    SPEED = dict(bird=(170, 40), cat=(75, 0), butterfly=(90, 55))  # (arrivo, a spasso)
+    SPEED = dict(bird=(170, 40), cat=(75, 0), butterfly=(90, 55), santa=(160, 0))  # (arrivo, a spasso)
 
     def __init__(self, kind, x, y, tx, ty, h=0.0, rng=None):
         self.kind, self.x, self.y, self.h, self.tx, self.ty = kind, x, y, h, tx, ty
@@ -151,6 +152,9 @@ class Critter:
         if self.kind == "cat":
             self.state, self.wait, self.vx = "scared", 0.6, side * 330.0
             self.events.append("hiss")
+        elif self.kind == "santa":  # Babbo Natale riparte di corsa con la slitta
+            self.state, self.wait, self.vx, self.vh = "scared", 0.5, side * 280.0, 170.0
+            self.events.append("jingle")
         elif self.kind == "bird":
             self.state = "flee"
             self.vx, self.vy, self.vh = side * rng.uniform(220, 320), rng.uniform(-60, 0), rng.uniform(180, 260)
@@ -167,7 +171,7 @@ class Critter:
             return
         if self.state == "flee":
             self.x, self.y, self.h = self.x + self.vx * dt, self.y + self.vy * dt, self.h + self.vh * dt
-            if self.kind == "bird":
+            if self.kind in ("bird", "santa"):
                 self.vh += 120 * dt
             if areas.at(self.x, self.y - self.h) is None:  # uscito dagli schermi
                 self.state = "gone"
@@ -184,11 +188,13 @@ class Critter:
             self.h = min(self.h, d * 0.6) if self.state == "arrive" else (abs(math.sin(self.t * 14)) * 3 if d > 1 else 0.0)
         elif self.kind == "butterfly":
             self.h = 45 + 18 * math.sin(self.t * 1.8)
+        elif self.kind == "santa" and self.state == "arrive":  # scende in volo con le renne
+            self.h = min(self.h, d * 0.4)
         if self.state == "arrive" and d <= 1:
             self.state = "stay"
-            if self.kind == "bird":
-                self.events.append("chirp")
-        if self.state == "stay" and self.kind != "cat":
+            if self.kind in ("bird", "santa"):
+                self.events.append("chirp" if self.kind == "bird" else "jingle")
+        if self.state == "stay" and self.kind not in ("cat", "santa"):
             self.wait -= dt
             if self.kind == "bird" and rng.random() < dt * 0.15:
                 self.events.append("chirp")
@@ -246,6 +252,8 @@ class Brain:
         self.focus = None               # (x, y, h) di chi sta guardando nella scenetta
         self.next_scene = 40.0
         self.next_jump = 0.0
+        self.xmas = False               # modalità Natale: Babbo Natale, pupazzi di neve, giochi nella neve
+        self.snowmen = []               # dict(x, y, down): down = istante in cui l'ha travolto
 
     # ------------------------------------------------------------ comandi esterni
     @property
@@ -400,7 +408,8 @@ class Brain:
         ind = self.dog.b["independence"]
         options = [("wander", 26), ("stand", 12), ("sit", 10), ("lie", 7), ("sniff", 10), ("scratch", 4),
                    ("stretch", 4), ("shake", 3), ("spin", 2 + 3 * ind), ("home", 5), ("explore", 5 + 5 * ind),
-                   ("eat", 5 * self.food), ("play", 6), ("dig", 4), ("howl", 1.5), ("roll", 3), ("zoom", 3),
+                   ("eat", 5 * self.food), ("play", 6), ("dig", 4 + 6 * self.xmas), ("howl", 1.5),
+                   ("roll", 3 + 6 * self.xmas), ("zoom", 3),
                    ("hop", 2), ("perch", 6 if self.perch_spot() else 0), ("tug", 4 if self.tug_plan() else 0),
                    ("drink", 2 + 12 * self.thirst if self.water else 0)]
         r = self.rng.uniform(0, sum(w for _, w in options))
@@ -467,7 +476,7 @@ class Brain:
         if a in ("fetch", "play", "eat", "drink", "zoom"):
             self.games(dt, T)
             a = self.activity
-        if a in ("guard", "flutter", "friend", "find"):
+        if a in ("guard", "flutter", "friend", "find", "snowman"):
             self.scenes(dt, T)
             a = self.activity
         if a in ("perch", "tug"):
@@ -677,6 +686,7 @@ class Brain:
             if self.activity not in ("guard", "flutter"):
                 c.scare(self.x, self.rng)
         self.critters = [c for c in self.critters if c.state != "gone"]
+        self.snowmen = [s for s in self.snowmen if s["down"] is None or self.t - s["down"] < 30]
         f = self.friend
         if f:
             f.update(dt)
@@ -704,7 +714,8 @@ class Brain:
     def scene(self, kind=None, item=None):
         """Comincia una scenetta: visita di uccellini, gatto, farfalla o di un cane amico, oppure trova qualcosa."""
         if kind is None:
-            kind = self.rng.choices(list(SCENES), weights=list(SCENES.values()))[0]
+            weights = dict(SCENES, **(XMAS_SCENES if self.xmas else {}))
+            kind = self.rng.choices(list(weights), weights=list(weights.values()))[0]
         i = self.here()
         if kind == "friend" and not self.exits(self.x, self.y):
             kind = "find"  # schermi attaccati a destra e sinistra: l'amico non saprebbe da dove arrivare
@@ -712,7 +723,7 @@ class Brain:
             self.perform(["yawn"])
         self.goal, self.focus, self.phase, self.phase_t = None, None, "notice", 0.0
         rng = self.rng
-        if kind in ("birds", "cat", "butterfly"):
+        if kind in ("birds", "cat", "butterfly", "santa"):
             tx, ty = self.spot_away(i)
             rx, ry, rw, rh = self.areas.rects[i]
             side = rng.choice((-1, 1))
@@ -722,7 +733,10 @@ class Brain:
                     gx, gy = self.areas.clamp(i, tx + rng.uniform(-50, 50), ty + rng.uniform(-25, 25))
                     self.critters.append(Critter("bird", ex, gy, gx, gy, rng.uniform(220, 320), rng))
             else:
-                self.critters.append(Critter(kind, ex, ty, tx, ty, 45.0 if kind == "butterfly" else 0.0, rng))
+                h = rng.uniform(260, 340) if kind == "santa" else 45.0 if kind == "butterfly" else 0.0
+                self.critters.append(Critter(kind, ex, ty, tx, ty, h, rng))
+                if kind == "santa":
+                    self.sfx.append("jingle")
             self.activity, self.timer = ("flutter", rng.uniform(16, 24)) if kind == "butterfly" else ("guard", 60.0)
             self.perform(["ears_up", "tilt"] if kind == "butterfly" else ["ears_up"])
         elif kind == "friend":
@@ -737,6 +751,12 @@ class Brain:
             self.friend_leaving = False
             self.activity, self.timer = "friend", 120.0
             self.perform(["ears_up", "wag"])
+        elif kind == "snowman":
+            if not any(s["down"] is None for s in self.snowmen):
+                x, y = self.spot_away(i, 220)
+                self.snowmen.append(dict(x=x, y=y, down=None))
+            self.activity, self.timer = "snowman", 60.0
+            self.perform(["ears_up", "tilt"])
         else:
             x, y = self.spot_away(i, 200)
             self.toy = Toy(item or rng.choice(["bone", "sock", "ball"]), x, y)
@@ -763,6 +783,8 @@ class Brain:
             self.guard(T, ph)
         elif a == "friend":
             self.play_friend(T, ph)
+        elif a == "snowman":
+            self.knock_snowman(T, ph)
         else:
             self.found(T, ph)
 
@@ -776,7 +798,7 @@ class Brain:
             return
         self.focus, self.gaze, self.gaze_timer = (lead.x, lead.y, lead.h), "guest", 0.5
         dist = math.hypot(lead.x - self.x, lead.y - self.y)
-        cat = lead.kind == "cat"
+        cat = lead.kind in ("cat", "santa")  # a Babbo Natale abbaia da lontano come al gatto
         if self.activity == "flutter":
             T.update(ears=0.9, tailUp=0.7, wagAmp=0.5, wagFreq=4.0)
             if ph == "notice":
@@ -828,6 +850,35 @@ class Brain:
                 self.phase, self.phase_t = "proud", 0.0
         else:  # fiero, li guarda andare via
             T.update(ears=0.9, tailUp=0.9, wagAmp=0.4, wagFreq=4.0)
+
+    def knock_snowman(self, T, ph):
+        """Pupazzo di neve: lo guarda storto, gli abbaia, lo travolge di corsa e poi si rotola nella neve."""
+        s = next((s for s in self.snowmen if s["down"] is None), None)
+        if s is None:
+            self.start("stand", 2.0)
+            return
+        self.focus, self.gaze, self.gaze_timer = (s["x"], s["y"], 30.0), "guest", 0.5
+        dist = math.hypot(s["x"] - self.x, s["y"] - self.y)
+        if ph == "notice":
+            self.face(s["x"], s["y"])
+            T.update(ears=1.0, tailUp=0.8, wagAmp=0.05, front=0.15, jaw=0.0, tongue=0.0)
+            if self.phase_t > 1.5:
+                self.phase, self.phase_t = "standoff", 0.0
+                self.sfx.append("growl")
+                self.perform(["bark", "bark"])
+        elif ph == "standoff":
+            T.update(ears=1.0, tailUp=0.9, wagAmp=0.0, front=0.3, jaw=0.15, tongue=0.0)
+            if self.phase_t > 3.0:
+                self.phase, self.phase_t = "charge", 0.0
+        elif ph == "charge":
+            T.update(ears=0.6, tailUp=0.8, jaw=0.5, tongue=0.3, breath=2.0)
+            self.go(s["x"], s["y"], run=True)
+            if dist < self.reach() or self.goal is None:  # travolto: palle di neve dappertutto
+                s["down"] = self.t
+                self.sfx.append("thud")
+                self.goal = None
+                self.perform(["shake", "happy"])
+                self.start("roll", self.rng.uniform(3, 4.5))
 
     def play_friend(self, T, ph):
         """Arriva un amico: si annusano, si inchinano e si rincorrono a turno, poi un riposino e ciao."""
