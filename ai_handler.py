@@ -19,28 +19,34 @@ TAGS = {
     "scodinzola": "wag", "orecchie": "ears_up", "inclina": "tilt", "abbaia": "bark", "guaisce": "whine",
     "inchino": "bow", "salta": "jump", "gira": "spin", "seduto": "sit", "sdraiato": "lie", "annusa": "sniff",
     "lecca": "lick", "sbadiglia": "yawn", "felice": "happy", "pensa": "think", "scrolla": "shake", "gratta": "scratch",
+    "miagola": "meow", "fusa": "purr", "soffia": "hiss",
 }
+CAT_TAGS = ["miagola", "fusa", "soffia", "orecchie", "inclina", "salta", "seduto", "sdraiato", "annusa", "lecca",
+            "sbadiglia", "pensa", "scrolla", "gratta"]
 # se il modello scrive comunque un'azione o un verso, lo trasformiamo in animazione
 KEYWORDS = [("scodinz", "wag"), ("abbai", "bark"), ("bau", "bark"), ("woof", "bark"), ("guai", "whine"),
             ("uggiol", "whine"), ("orecch", "ears_up"), ("inclin", "tilt"), ("salt", "jump"), ("annus", "sniff"),
             ("lecc", "lick"), ("sbadigl", "yawn"), ("sedut", "sit"), ("siede", "sit"), ("sdrai", "lie"),
-            ("gira", "spin"), ("gratt", "scratch"), ("scroll", "shake"), ("inchin", "bow"), ("felic", "happy")]
+            ("gira", "spin"), ("gratt", "scratch"), ("scroll", "shake"), ("inchin", "bow"), ("felic", "happy"),
+            ("miagol", "meow"), ("fusa", "purr"), ("soffi", "hiss")]
 _TAG_RE = re.compile(r"\[\s*([a-zà-ù_]+)\s*\]", re.IGNORECASE)
 _STAR_RE = re.compile(r"\*[^*\n]{1,80}\*")
-_SOUND_RE = re.compile(r"(?<![\w])(?:bau|woof|wof|arf|grr+|ahu+|auu+)(?:[\s,-]+(?:bau|woof|wof|arf))*(?![\w])[!.…]*", re.IGNORECASE)
+_SOUND_RE = re.compile(r"(?<![\w])(?:bau|woof|wof|arf|grr+|ahu+|auu+|miao+|meow|mrr+|prr+)(?:[\s,-]+(?:bau|woof|wof|arf))*(?![\w])[!.…]*", re.IGNORECASE)
 
 
-def system_prompt(breed_label, personality, name=""):
-    tags = " ".join(f"[{t}]" for t in TAGS)
+def system_prompt(breed_label, personality, name="", cat=False):
+    tags = " ".join(f"[{t}]" for t in (CAT_TAGS if cat else TAGS))
+    example = "[fusa][orecchie]" if cat else "[scodinzola][orecchie]"
     return (
         (f"Ti chiami {name}. " if name else "")
-        + f"Sei un cane di razza {breed_label} che vive sul desktop Linux del tuo umano. "
-        f"Personalità: {personality}. "
+        + ("Sei un gatto di casa che vive sul desktop del tuo umano. " if cat else
+           f"Sei un cane di razza {breed_label} che vive sul desktop Linux del tuo umano. ")
+        + f"Personalità: {personality}. "
         "Rispondi nella lingua dell'utente (di default italiano), in modo breve (massimo 3-4 frasi). "
         "Se ti chiedono qualcosa di pratico dai una risposta corretta e utile. "
-        "Non sei in grado di scrivere versi, onomatopee o descrizioni di azioni: niente asterischi, niente 'bau', "
+        "Non sei in grado di scrivere versi, onomatopee o descrizioni di azioni: niente asterischi, niente 'bau' o 'miao', "
         "niente '*scodinzola*'. Le tue emozioni le mostri col corpo: all'inizio della risposta metti da 1 a 3 tag "
-        f"scelti solo da questo elenco: {tags}. Esempio: \"[scodinzola][orecchie] Certo, ecco come si fa...\""
+        f"scelti solo da questo elenco: {tags}. Esempio: \"{example} Certo, ecco come si fa...\""
     )
 
 

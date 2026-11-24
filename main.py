@@ -41,6 +41,17 @@ else:
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"  # avvio automatico su Windows
 DEFAULTS = {"breed": dog3d.DEFAULT_BREED, "name": "", "kennel": "right", "windows": True, "sounds": True, "api_key": "",
             "model": "gemini-flash-latest", "christmas": False}
+# gatto: tiragraffi e lettiera (x, z) nello spazio della cuccia, vedi POST e LITTER in dog.frag
+CAT_POST, CAT_LITTER, CAT_POST_TOP = (-17.0, 8.0), (14.0, 6.0), 66.0
+
+
+def home_point(kx, ky, s, lx, lz):
+    """Punto della casa (spazio dello shader: girato di -10°, spostato di 6 in z) → punto a terra sullo schermo."""
+    a, lz = math.radians(-10), lz - 6.0
+    x, z = math.cos(a) * lx - math.sin(a) * lz, math.sin(a) * lx + math.cos(a) * lz
+    return kx + x * s, ky + z * s * math.sin(dog3d.ELEVATION)
+
+
 FLAGS = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
 
 
@@ -232,7 +243,16 @@ class ToyWindow(QWidget):
             self.hide()
             return
         self.height_above = toy.h
-        self.move(int(toy.x - self.W / 2), int(toy.y - toy.h - self.GROUND))
+        x0, y0 = toy.x - self.W / 2, toy.y - toy.h - self.GROUND
+        x1, y1 = x0 + self.W, y0 + self.H
+        if toy.thread:  # gomitolo: la finestra si allarga fino al filo srotolato (a terra o avvolto attorno al gatto)
+            xs, ys = [q[0] for q in toy.thread], [q[1] - q[2] for q in toy.thread]
+            x0, y0, x1, y1 = min(x0, min(xs) - 4), min(y0, min(ys) - 4), max(x1, max(xs) + 4), max(y1, max(ys) + 4)
+        self.origin = (int(x0), int(y0))
+        size = (int(x1) - self.origin[0] + 1, int(y1) - self.origin[1] + 1)
+        if size != (self.width(), self.height()):
+            self.resize(*size)
+        self.move(*self.origin)
         self.show()
         self.update()
 
@@ -241,7 +261,23 @@ class ToyWindow(QWidget):
             return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        c = QPointF(self.W / 2, self.GROUND)
+        ox, oy = getattr(self, "origin", (self.toy.x - self.W / 2, self.toy.y - self.toy.h - self.GROUND))
+        c = QPointF(self.toy.x - ox, self.toy.y - self.toy.h - oy)
+        if self.toy.thread:  # filo di lana, dal capo libero fino sotto il gomitolo; dietro al gatto non si vede
+            path, gap = QPainterPath(), True
+            for x, y, lift, hidden in self.toy.thread:
+                if hidden:
+                    gap = True
+                elif gap:
+                    path.moveTo(x - ox, y - lift - oy)
+                    gap = False
+                else:
+                    path.lineTo(x - ox, y - lift - oy)
+            if not gap:
+                path.lineTo(c.x(), c.y() + self.toy.h)
+            p.setPen(QPen(QColor("#C23048"), 1.1))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPath(path)
         if self.height_above < 38:  # ombra a terra, sotto il giocattolo in volo
             k = 1 - self.height_above / 38
             p.setPen(Qt.PenStyle.NoPen)
@@ -272,6 +308,59 @@ class ToyWindow(QWidget):
                 for y in (-2, 2):
                     path.addEllipse(QPointF(x, y), 2.6, 2.6)
             p.drawPath(path.simplified())
+        elif self.toy.kind == "yarn":  # gomitolo di lana con il filo che si srotola
+            r = 5.0 * max(0.55, 1 - 0.45 * self.toy.unwound() / self.toy.THREAD)  # più filo a terra, più piccolo
+            p.setPen(QPen(QColor("#B0283E"), 0.9))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            if not self.toy.thread:  # capo libero finché non comincia a srotolarsi
+                tail = QPainterPath(QPointF(0, -0.5))
+                tail.cubicTo(QPointF(-6, 1), QPointF(-9, -1), QPointF(-14, 0.5))
+                p.drawPath(tail)
+            g = QRadialGradient(QPointF(-1.5, -r - 1.5), r * 1.6)
+            g.setColorAt(0, QColor("#F27A8E"))
+            g.setColorAt(0.7, QColor("#D33A55"))
+            g.setColorAt(1, QColor("#8E1B30"))
+            p.setBrush(g)
+            p.drawEllipse(QPointF(0, -r), r, r)
+            p.translate(0, -r)
+            p.rotate(math.degrees(self.toy.angle))
+            p.setPen(QPen(QColor(255, 210, 220, 150), 0.6))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for k in range(3):
+                p.rotate(60)
+                p.drawArc(QRectF(-r * 0.9, -r * 0.45, r * 1.8, r * 0.9), 0, 180 * 16)
+        elif self.toy.kind == "mouse":  # topolino a carica: grigio, orecchie rosa, chiavetta che gira
+            face = 1 if self.toy.vx >= 0 else -1
+            self.face = face if abs(self.toy.vx) > 1 else getattr(self, "face", 1)
+            p.scale(self.face, 1)
+            p.setPen(QPen(QColor("#6B6B70"), 0.8))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            tail = QPainterPath(QPointF(-6, -2))
+            tail.cubicTo(QPointF(-11, -1), QPointF(-12, -6), QPointF(-16, -4 + math.sin(self.toy.t * 12) * 1.5))
+            p.drawPath(tail)
+            body = QPainterPath(QPointF(-7, -1))
+            body.cubicTo(QPointF(-7, -8), QPointF(2, -8), QPointF(8, -2))
+            body.quadTo(QPointF(9, -1), QPointF(7, 0))
+            body.closeSubpath()
+            g = QLinearGradient(0, -7, 0, 0)
+            g.setColorAt(0, QColor("#B9B9BE"))
+            g.setColorAt(1, QColor("#7E7E85"))
+            p.setPen(QPen(QColor("#5C5C62"), 0.6))
+            p.setBrush(g)
+            p.drawPath(body)
+            p.setBrush(QColor("#F2A7B3"))
+            p.drawEllipse(QPointF(3, -6), 1.9, 1.9)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#1E1E22"))
+            p.drawEllipse(QPointF(5.2, -3.6), 0.7, 0.7)
+            p.setBrush(QColor("#E67F93"))
+            p.drawEllipse(QPointF(8.4, -1.4), 0.9, 0.9)
+            p.translate(-2, -7)  # chiavetta della carica
+            p.rotate(math.degrees(self.toy.t * 9 if self.toy.spring > 0 else 0.4))
+            p.setPen(QPen(QColor("#B8902E"), 1.0))
+            p.drawLine(QPointF(0, 0), QPointF(0, -2.5))
+            p.setBrush(QColor("#E0B84A"))
+            p.drawEllipse(QPointF(0, -3.6), 1.8, 1.1)
         elif self.toy.kind == "sock":
             p.translate(0, -3)
             p.rotate(math.degrees(self.toy.angle) * 0.4)
@@ -751,6 +840,7 @@ class Pet(QObject):
         self.view = DogWindow(self, 0)
         self.bubble = Bubble(self)
         self.toy_window = ToyWindow()
+        self.toy_on_top = False
         self.critter_windows = []
         self.friend_view = FriendView()
         self.friend_in_front = None
@@ -821,11 +911,20 @@ class Pet(QObject):
         i = self.areas.at(kx, ky - 1)
         i = self.areas.nearest(kx, ky) if i is None else i
         kx, ky = self.areas.clamp(i, kx, ky, kw / 2, kh - dog3d.BASE, self.KENNEL_MARGIN * 0.4)
+        s = self.dog.b["kscale"]
+        cat = self.dog.b.get("cat", False)
+        if cat:  # il gatto deve poter stare accanto al palo senza uscire dallo schermo
+            dx = home_point(0, 0, s, *CAT_POST)[0]
+            kx = max(kx, self.areas.rects[i][0] + self.dog.window_size()[0] / 2 + 8 - dx)
         kh0 = view3d.kennel_size(self.dog.b)[1]  # a Natale la finestra è più alta: la casa resta in fondo
         house = QPolygon([QPoint(int(kw * x), int(kh - kh0 * (1 - y))) for x, y in
                           ((0.12, 1.0), (0.12, 0.4), (0.5, 0.08), (0.88, 0.4), (0.88, 1.0))])
         mask = QRegion(house)  # clic solo sulla sagoma della casetta
-        if self.kennel.xmas:  # più il fumo del comignolo
+        if cat:  # tiragraffi più la striscia in basso con lettiera e ciotole
+            px = int(kw / 2 + home_point(0, 0, s, *CAT_POST)[0])
+            mask = QRegion(px - int(17 * s), int(kh - kh0 * 0.92), int(34 * s), int(kh0 * 0.92)).united(
+                QRegion(0, int(kh - 34 * s), kw, int(34 * s)))
+        elif self.kennel.xmas:  # più il fumo del comignolo
             mask = mask.united(QRegion(int(kw * 0.5), 0, int(kw * 0.4), int(kh - kh0 * 0.75)))
         self.kennel.setMask(mask)
         self.kennel_pos = (kx, ky)
@@ -833,8 +932,10 @@ class Pet(QObject):
         # il cane si sdraia davanti alla porta, girato verso il centro dello schermo
         rx, ry, rw, rh = self.areas.rects[i]
         side = 1 if kx > rx + rw / 2 else -1
-        s = self.dog.b["kscale"]
         self.brain.set_home(kx, ky + 12 * s, side)
+        self.brain.post = home_point(kx, ky, s, *CAT_POST) if cat else None
+        self.brain.litter = home_point(kx, ky, s, *CAT_LITTER) if cat else None
+        self.brain.post_h, self.brain.post_r = CAT_POST_TOP * s, 4.2 * s
         self.brain.bowl = (kx + 42.2 * s, ky + 3 * s)  # ciotola davanti a destra della cuccia (vedi dog.frag)
         self.brain.water = (kx - 36.6 * s, ky + 5.5 * s)  # acqua davanti a sinistra
 
@@ -852,7 +953,8 @@ class Pet(QObject):
         w, h = self.view.width(), self.view.height()
         self.view.dog, self.view.rig = self.dog, rig
         self.view.move(int(self.brain.x - w / 2), int(self.brain.y + self.dog.below - h))
-        in_front = self.brain.y >= self.kennel_pos[1]  # chi è più in basso sullo schermo è più vicino a te
+        # chi è più in basso è più vicino a te; il gatto sul tiragraffi sta sempre davanti al palo
+        in_front = self.brain.y >= self.kennel_pos[1] or self.brain.activity in ("climb", "post", "litter")
         if in_front != self.dog_in_front:
             self.dog_in_front = in_front
             (self.view if in_front else self.kennel).raise_()
@@ -862,6 +964,12 @@ class Pet(QObject):
             self.place_bubble()
         toy = self.brain.toy
         self.toy_window.follow(toy)
+        held = bool(toy and toy.pins)
+        if held and (not self.toy_on_top or self.dog_in_front != getattr(self, "_front_seen", None)):
+            self.toy_window.raise_()  # il filo che tiene o che lo avvolge si vede sopra al gatto
+        elif self.toy_on_top and not held:
+            self.view.raise_()  # tornato a terra: il gatto ci cammina sopra
+        self.toy_on_top, self._front_seen = held, self.dog_in_front
         self.show_visitors()
         self.send_window_moves()
         for name in self.brain.sfx:
@@ -1026,7 +1134,7 @@ class Pet(QObject):
             return
         if self.chat is None:
             b = self.dog.b
-            self.chat = GeminiChat(self.api_key(), system_prompt(b["label"], b["personality"], self.cfg["name"]),
+            self.chat = GeminiChat(self.api_key(), system_prompt(b["label"], b["personality"], self.cfg["name"], b.get("cat", False)),
                                    self.cfg["model"])
         name = self.cfg["name"].strip().lower()
         if name and name in text.lower():
@@ -1074,9 +1182,13 @@ class Pet(QObject):
             a.setCheckable(True)
             a.setChecked(self.cfg["kennel"] == side)
             a.triggered.connect(lambda _=False, s=side: self.set_kennel(s))
-        menu.addAction("Tira rametto", lambda: self.pick_throw("stick"))
-        menu.addAction("Lancia pallina", lambda: self.pick_throw("ball"))
-        menu.addAction("Torna nella cuccia", self.brain.go_home)
+        if self.brain.cat:  # giochi da gatto
+            menu.addAction("Lancia il gomitolo", lambda: self.pick_throw("yarn"))
+            menu.addAction("Carica il topolino", lambda: self.pick_throw("mouse"))
+        else:
+            menu.addAction("Tira rametto", lambda: self.pick_throw("stick"))
+            menu.addAction("Lancia pallina", lambda: self.pick_throw("ball"))
+        menu.addAction("Sali sul tiragraffi" if self.brain.cat else "Torna nella cuccia", self.brain.go_home)
         menu.addSeparator()
         xmas = menu.addAction("Modalità Natale (neve, Babbo Natale, cuccia addobbata)")
         xmas.setCheckable(True)
@@ -1087,7 +1199,7 @@ class Pet(QObject):
         play.setChecked(self.cfg["windows"])
         play.setEnabled(self.bridge is not None)
         play.triggered.connect(self.toggle_windows)
-        menu.addAction("Nome del cane…", self.ask_name)
+        menu.addAction("Nome del gatto…" if self.brain.cat else "Nome del cane…", self.ask_name)
         snd = menu.addAction("Suoni")
         snd.setCheckable(True)
         snd.setChecked(self.cfg["sounds"])
@@ -1103,7 +1215,7 @@ class Pet(QObject):
 
     def pick_throw(self, kind):
         """Copre gli schermi con un velo: il clic sceglie dove cade il giocattolo."""
-        what = "il rametto" if kind == "stick" else "la pallina"
+        what = dict(stick="il rametto", ball="la pallina", yarn="il gomitolo", mouse="il topolino")[kind]
         self.close_chat()
 
         def done(pos=None):

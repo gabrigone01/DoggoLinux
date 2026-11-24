@@ -78,6 +78,7 @@ Per costruirlo in locale: `sh packaging/build-deb.sh 1.0.1` → `build/doggo_all
 ## Cosa fa
 
 - **Ispirato ai Maremmani veri**: pelo avorio lungo che cade a ciocche, criniera, coda folta portata bassa, orecchie a V color biscotto, naso e labbra neri, bocca aperta che ansima.
+- **C'è anche un gatto, Pippi** (clic destro → Razza → «Pippi»): rosso tigrato e bianco come quello delle foto, corpo lungo, coda dritta a punto interrogativo che si muove dalla punta, orecchie a triangolo rosa dentro, occhi verdi a fessura, naso rosa e baffi. Al posto della cuccia ha un **tiragraffi** e la **lettiera**: si fa le unghie sul sisal, si arrampica e dorme in cima, salta nella lettiera, raspa, ricopre e poi fa la corsa pazza. Miagola invece di abbaiare, alle carezze fa le **fusa** (non dà la zampa), si lecca la zampa e si passa il muso, impasta, dorme **a ciambella** con il muso sulla coda. Quando punta gli uccellini si **irrigidisce**, striscia acquattato col sedere che ondeggia, batte i denti e fa il balzo. Se arriva un cane (o Babbo Natale) inarca la **schiena**, gonfia pelo e coda e **soffia** finché non se ne va. Ogni tanto spunta un **topolino a carica** che corre per la stanza: lui si immobilizza, lo rincorre, gli salta addosso, lo prende a zampate e alla fine te lo porta in bocca. Al posto di rametto e pallina gli lanci il **gomitolo** (che rotolando srotola il filo: lui se lo tira a zampate o ci si rotola dentro, ci resta impigliato e si trascina dietro il gomitolo) o il **topolino**. Ama sedersi sopra le finestre.
 - **3D in tempo reale**: il cane è disegnato dalla scheda video (ray marching di forme organiche) con scheletro, zampe articolate, pelo, luci e ombra a terra. Cammina col passo vero, si gira, si siede, si sdraia, dorme.
 - **Si fa gli affari suoi**: passeggia, annusa per terra, mangia dalla ciotola accanto alla cuccia, gioca da solo con la pallina, scava, ulula, si rotola sulla schiena, fa le corse pazze, salta, si gratta, si stiracchia, si scrolla, si rincorre la coda, va a esplorare gli altri schermi o torna a dormire nella cuccia. Shiba e Maremmano sono più indipendenti, Border Collie e Golden più attenti a te.
 - **Gioca con le finestre** (KDE): sa dove sono le tue finestre. Preferisce stare sul desktop libero, ogni tanto salta sul bordo superiore di una finestra e ci si siede o sdraia (se la sposti la segue, se la chiudi scende con un salto), oppure addenta il bordo di una finestra e la tira un po' di lato camminando all'indietro. Non tocca mai finestre massimizzate o a schermo intero. Si spegne dal menu «Gioca con le finestre».
@@ -124,7 +125,7 @@ Crea una chiave gratuita su <https://aistudio.google.com/apikey>, poi:
 { "breed": "maremmano", "name": "", "kennel": "right", "windows": true, "api_key": "", "model": "gemini-flash-latest" }
 ```
 
-`breed`: `maremmano`, `golden`, `collie`, `dachshund`, `shiba`, `meticcio`. `kennel`: `right` o `left` (angolo dello schermo principale). Quando trascini la cuccia si aggiunge `kennel_pos` con la sua posizione.
+`breed`: `maremmano`, `golden`, `collie`, `dachshund`, `shiba`, `meticcio`, `pippi` (il gatto). `kennel`: `right` o `left` (angolo dello schermo principale). Quando trascini la cuccia si aggiunge `kennel_pos` con la sua posizione.
 
 ## File
 

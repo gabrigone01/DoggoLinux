@@ -10,8 +10,10 @@ import threading
 import wave
 from pathlib import Path
 
+import dog3d
+
 RATE = 22050
-VERSION = 2  # cambiare se si modificano sintesi o registrazioni: rigenera la cache
+VERSION = 3  # cambiare se si modificano sintesi o registrazioni: rigenera la cache
 RECORDED = Path(__file__).with_name("sounds")
 # registrazione da usare per razza: i cani grandi abbaiano col vocione, i piccoli con la voce acuta
 SOURCE = dict(bark=dict(maremmano="bark_big", golden="bark_big", collie="bark_big", dachshund="bark_small",
@@ -21,7 +23,9 @@ SHIFT = dict(maremmano=0.92, golden=1.0, collie=1.1, dachshund=1.0, shiba=1.08, 
 VOCAL = {"bark", "yip", "whine", "howl", "growl", "pant", "yawn"}
 
 # altezza della voce per razza (Hz): il maremmano ha un vocione, lo shiba strilla
-PITCH = dict(maremmano=230, golden=310, collie=400, dachshund=470, shiba=520, meticcio=450)
+PITCH = dict(maremmano=230, golden=310, collie=400, dachshund=470, shiba=520, meticcio=450, pippi=600)
+# il gatto: i versi da cane diventano miagolii, fusa, trilli e soffi
+CAT_SOUND = dict(bark="meow", yip="trill", whine="meow", howl="meow", growl="hiss", pant="purr", snore="purr")
 
 
 # ------------------------------------------------------------------ mattoncini di sintesi
@@ -186,6 +190,36 @@ def make(name, p):
             tw = [math.sin(2 * math.pi * (f0 + 2500 * i / n) * i / RATE) for i in range(n)]
             place(out, envelope(tw, 0.005, 0.03), k * 0.12)
         return out
+    if name == "meow":  # "mi-a-u": l'altezza sale e scende, la vocale passa da i ad a ad u
+        dur = rng.uniform(0.55, 0.8)
+        src = voice(dur, lambda t: p * (0.95 + 0.45 * math.sin(math.pi * min(t / (dur * 0.75), 1.0)) - 0.2 * t / dur), 7, 0.08, rng)
+        vows = [formants(src, f, fscale) for f in ([(320, 4, 1.0), (2400, 6, 0.5)], vow_a, vow_u)]
+        out = []
+        for i in range(len(src)):
+            x = i / len(src)
+            wi, wu = max(0.0, 1 - x / 0.3), max(0.0, (x - 0.55) / 0.45)
+            out.append(wi * vows[0][i] + max(0.0, 1 - wi - wu) * vows[1][i] + wu * vows[2][i])
+        return envelope(out, 0.04, None, 0.15)
+    if name == "trill":  # "mrrp": breve, arrotolato, all'insù
+        src = voice(0.3, lambda t: p * (0.85 + 0.6 * t / 0.3), 6, 0.1, rng)
+        roll = [v * (0.55 + 0.45 * math.sin(2 * math.pi * 32 * i / RATE)) for i, v in enumerate(formants(src, vow_u, fscale))]
+        return envelope(roll, 0.02, None, 0.08)
+    if name == "purr":  # fusa: impulsi gravi ~26 al secondo, più forti espirando che inspirando
+        out, at = [], 0.0
+        for dur, gain in ((0.8, 1.0), (0.7, 0.6), (0.8, 1.0), (0.7, 0.6)):
+            n = noise(dur, rng)
+            pulse = [v * (0.5 + 0.5 * math.sin(2 * math.pi * 26 * i / RATE)) ** 6 * math.sin(math.pi * i / len(n)) * gain
+                     for i, v in enumerate(n)]
+            place(out, lowpass(bandpass(pulse, 160, 0.6), 0.2), at)
+            at += dur
+        return out
+    if name == "chatter":  # il gatto che guarda gli uccellini e batte i denti
+        out = bursts(7, 0.075, 0.025, 2400, 2.5, rng, 0.1)
+        return mix((1.0, out), (0.5, place([], envelope(formants(voice(0.5, lambda t: p * 1.3, 5, 0.2, rng), vow_a, fscale), 0.01, 0.2), 0.0)))
+    if name == "whirr":  # molla del topolino a carica: ingranaggi che ronzano
+        n = int(0.9 * RATE)
+        tick = [(1.0 if (i * 38 // RATE) % 2 == 0 else -1.0) * (0.6 + 0.4 * math.sin(2 * math.pi * 3 * i / RATE)) for i in range(n)]
+        return envelope(mix((0.5, bandpass(tick, 900, 2)), (0.5, bandpass(noise(0.9, rng), 3500, 3))), 0.02, None, 0.2)
     if name == "hiss":  # il gatto soffia
         return envelope(bandpass(noise(0.7, rng), 4500, 0.7), 0.04, None, 0.25)
     if name == "jingle":  # sonagli della slitta: colpetti metallici fitti e inarmonici
@@ -201,8 +235,8 @@ def make(name, p):
 
 
 NAMES = ["bark", "yip", "whine", "howl", "growl", "pant", "yawn", "sniff", "lick", "shake", "scratch", "dig",
-         "crunch", "snore", "bounce", "clack", "thud", "chirp", "hiss", "jingle"]
-VOLUME = dict(snore=0.5, sniff=0.7, lick=0.6, pant=0.7, bounce=0.8, clack=0.8, thud=0.9, chirp=0.5, hiss=0.7, jingle=0.5)
+         "crunch", "snore", "bounce", "clack", "thud", "chirp", "hiss", "jingle", "meow", "trill", "purr", "chatter", "whirr"]
+VOLUME = dict(purr=0.8, chatter=0.6, whirr=0.4, snore=0.5, sniff=0.7, lick=0.6, pant=0.7, bounce=0.8, clack=0.8, thud=0.9, chirp=0.5, hiss=0.7, jingle=0.5)
 
 
 def read_wav(path):
@@ -297,6 +331,8 @@ class Player:
             self.ready.add((name, breed))
 
     def play(self, name):
+        if dog3d.BREEDS.get(self.breed, {}).get("cat"):
+            name = CAT_SOUND.get(name, name)
         if not self.enabled or self.cmd is None or (name, self.breed) not in self.ready:
             return
         path = str(self.path(name, self.breed))

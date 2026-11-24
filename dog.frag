@@ -10,13 +10,15 @@ uniform int uScene;          // 0 cane, 1 cuccia
 uniform mat3 uBodyRot;       // cane -> mondo
 uniform vec3 uRoot;
 uniform vec3 uChest, uHip, uNeck0, uHeadPos;
+uniform vec3 uMid, uChestA;  // metà schiena (gobba, curva della ciambella) e attacco del torace
+uniform float uCurlA;        // angolo di cui la ciambella gira il torace attorno al bacino
 uniform vec2 uBodyR;
 uniform mat3 uHeadRot;       // testa -> cane
 uniform float uHeadR, uMuzzle, uJaw, uTongue, uEyeOpen, uFur, uNeckR;
 uniform vec3 uLeg[16];
 uniform vec4 uLegR;          // anteriore alto/basso, posteriore alto/basso
 uniform float uMane;         // criniera su collo e petto (0 = pelo corto)
-uniform int uCarry;          // in bocca: 0 niente, 1 pallina, 2 rametto, 3 osso, 4 calzino
+uniform int uCarry;          // in bocca: 0 niente, 1 pallina, 2 rametto, 3 osso, 4 calzino, 5 topolino (gatto)
 uniform float uFood;         // crocchette nella ciotola (0..1)
 uniform float uZoom;         // pixel per unità (1 nell'app, di più nelle anteprime)
 uniform vec3 uTail[6];
@@ -29,6 +31,7 @@ uniform int uPattern;
 uniform vec3 uCoat, uCoat2, uMark;
 uniform vec3 uBoundC;
 uniform float uBound;
+uniform int uCat;            // 1: gatto (testa, mantello) e, nella scena 1, lettiera e tiragraffi al posto della cuccia
 
 uniform vec3 uWood, uRoof;
 uniform float uKScale;
@@ -96,6 +99,11 @@ float sdEar(vec3 q, int i) {
     float far = length(r - d * L * 0.5) - L * 0.6 - uEarDim.y;
     if (far > 1.5) return far;  // la deformazione sotto non è una distanza valida lontano dall'orecchio
     float u = dot(r, d), v = dot(r, n), s = dot(r, w);
+    if (uCat == 1) {  // gatto: triangolo piatto e un po' concavo (distanza vera: niente alone attorno alla punta)
+        v += (s * s) / (uEarDim.y * 3.0) * 0.6;
+        float tri = sdRoundCone(vec3(u, 0.0, s), vec3(0.0), vec3(L, 0.0, 0.0), uEarDim.y, uEarDim.y * 0.08);
+        return smax(tri, abs(v) - uEarDim.z, uEarDim.z);
+    }
     float t = clamp(u / L, 0.0, 1.0);
     float taper = max(mix(1.0, 1.0 - uEarDim.w, t), 0.12);
     // leggera concavità: il padiglione si incurva
@@ -108,7 +116,28 @@ const float MOUTH_Y = -0.42, MOUTH_X = -0.38;  // l'angolo è dietro l'occhio, v
 float mouthW(float x, float R) { return mix(0.7 * R, 0.4 * R, smoothstep(-0.3 * R, 0.3 * R, x)); }  // linea della bocca e suo angolo (spazio della testa, in R)
 vec3 toHead(vec3 p) { return transpose(uHeadRot) * (p - uHeadPos); }
 // occhi a mandorla rivolti in avanti, verso il muso, come nei cani veri
-vec3 eyeC(float sg) { return vec3(0.63 * uHeadR, 0.2 * uHeadR, sg * 0.38 * uHeadR); }
+vec3 eyeC(float sg) {
+    return uCat == 1 ? vec3(0.56 * uHeadR, 0.12 * uHeadR, sg * 0.33 * uHeadR)  // gatto: occhioni rivolti avanti
+                     : vec3(0.63 * uHeadR, 0.2 * uHeadR, sg * 0.38 * uHeadR);
+}
+
+// testa del gatto: cranio tondo, guance larghe, canna del naso corta, cuscinetti dei baffi e mento che si apre
+vec3 catJaw(vec3 q) {
+    float R = uHeadR, ja = uJaw * 0.6;
+    vec3 hinge = vec3(-0.2 * R, -0.35 * R, 0.0);
+    vec3 jq = q - hinge;
+    return vec3(cos(ja) * jq.x - sin(ja) * jq.y, sin(ja) * jq.x + cos(ja) * jq.y, jq.z) + hinge;
+}
+float catHead(vec3 q) {
+    float R = uHeadR;
+    vec3 bq = vec3(q.x, q.y, abs(q.z));
+    float h = sdEllipsoid(q - vec3(-0.08 * R, 0.06 * R, 0.0), vec3(0.82 * R, 0.74 * R, 0.86 * R));
+    h = smin(h, sdEllipsoid(bq - vec3(0.05 * R, -0.22 * R, 0.4 * R), vec3(0.55 * R, 0.42 * R, 0.5 * R)), 0.25 * R);
+    h = smin(h, sdEllipsoid(q - vec3(0.5 * R, -0.08 * R, 0.0), vec3(0.3 * R, 0.23 * R, 0.25 * R)), 0.2 * R);
+    h = smin(h, sdEllipsoid(bq - vec3(0.64 * R, -0.3 * R, 0.15 * R), vec3(0.22 * R, 0.17 * R, 0.2 * R)), 0.12 * R);
+    float chin = sdEllipsoid(catJaw(q) - vec3(0.5 * R, -0.5 * R, 0.0), vec3(0.2 * R, 0.11 * R, 0.17 * R));
+    return smin(h, chin, max(0.1 * R * (1.0 - uJaw * 3.0), 0.01));
+}
 
 vec2 mapDog(vec3 pw) {
     vec3 p = transpose(uBodyRot) * (pw - uRoot);
@@ -119,7 +148,10 @@ vec2 mapDog(vec3 pw) {
     vec3 pz = vec3(p.x, p.y, p.z * 1.18);
     float body = sdEllipsoid(p - uChest, vec3(rc * 1.08, rc * 1.12, rc * 0.84));
     body = smin(body, sdEllipsoid(p - uHip, vec3(rh * 1.12, rh * 1.02, rh * 0.86)), rc * 0.7);
-    body = smin(body, sdRoundCone(pz, uHip + vec3(0.0, rh * 0.15, 0.0), uChest + vec3(0.0, rc * 0.1, 0.0), rh * 0.78, rc * 0.8), rc * 0.5);
+    vec3 hipA = uHip + vec3(0.0, rh * 0.15, 0.0), zs = vec3(1.0, 1.0, 1.18);
+    float rmid = mix(rh * 0.78, rc * 0.8, 0.5);
+    body = smin(body, smin(sdRoundCone(pz, hipA * zs, uMid * zs, rh * 0.78, rmid),
+                           sdRoundCone(pz, uMid * zs, uChestA * zs, rmid, rc * 0.8), rc * 0.3), rc * 0.5);
 
     float R = uHeadR;
     vec3 neckEnd = uHeadPos + uHeadRot * vec3(-R * 0.45, -R * 0.35, 0.0);
@@ -156,7 +188,11 @@ vec2 mapDog(vec3 pw) {
     vec3 q = toHead(p);
     // testa anatomica: cranio largo e piatto, arcate sopraccigliari, stop, muso alto, labbra, mascella
     float M = uMuzzle;
-    float head = sdEllipsoid(q - vec3(-0.15 * R, 0.12 * R, 0.0), vec3(0.95 * R, 0.74 * R, 0.82 * R));
+    float head;
+    vec3 jq = q;
+    if (uCat == 1) head = catHead(q);
+    else {
+    head = sdEllipsoid(q - vec3(-0.15 * R, 0.12 * R, 0.0), vec3(0.95 * R, 0.74 * R, 0.82 * R));
     vec3 bq = vec3(q.x, q.y, abs(q.z));
     head = smin(head, sdEllipsoid(bq - vec3(0.4 * R, 0.32 * R, 0.34 * R), vec3(0.28, 0.17, 0.24) * R), 0.22 * R);
     head = smin(head, sdEllipsoid(q - vec3(0.02 * R, -0.24 * R, 0.0), vec3(0.6 * R, 0.46 * R, 0.74 * R)), 0.3 * R);
@@ -168,11 +204,12 @@ vec2 mapDog(vec3 pw) {
     head = max(head, -smax(smax(q.y - MOUTH_Y * R, MOUTH_X * R - q.x, 0.1 * R), abs(q.z) - mouthW(q.x, R), 0.2 * R));
     vec3 hinge = vec3(-0.55 * R, -0.39 * R, 0.0);
     float ja = uJaw * 0.5;  // cerniera più indietro: basta meno angolo per la stessa apertura
-    vec3 jq = q - hinge;
+    jq = q - hinge;
     jq = vec3(cos(ja) * jq.x - sin(ja) * jq.y, sin(ja) * jq.x + cos(ja) * jq.y, jq.z) + hinge;
     float jaw = sdRoundCone(jq, vec3(-0.35 * R, -0.57 * R, 0.0), vec3(0.45 * R + M * 0.9, -0.53 * R, 0.0), 0.28 * R, 0.15 * R);
     // bocca chiusa: mento unito al muso; aperta: separati (k mai zero: smin dividerebbe per zero e la testa sparirebbe)
     head = smin(head, jaw, max(0.16 * R * (1.0 - uJaw * 4.0), 0.01));
+    }
     head -= uFur * (0.08 + 0.1 * (furN(q * 0.9) - 0.4));
 
     float fur = smin(smin(core, legs, rh * 0.45), tail, uTailR * 1.2);
@@ -181,7 +218,7 @@ vec2 mapDog(vec3 pw) {
     // così l'apertura arriva fino all'angolo della bocca (a bocca chiusa il cuneo è vuoto)
     float wedge = smax(smax(max(q.y - MOUTH_Y * R, MOUTH_Y * R - jq.y), MOUTH_X * R - q.x, 0.12 * R),
                        abs(q.z) - mouthW(q.x, R), 0.2 * R);  // spigoli arrotondati: niente bocca "a scatola"
-    fur = max(fur, -wedge);
+    if (uCat == 0) fur = max(fur, -wedge);
     float part = 1.0;
     float best = core;
     if (legs < best) { best = legs; part = 2.0; }
@@ -189,6 +226,22 @@ vec2 mapDog(vec3 pw) {
     if (head < best) { best = head; part = 4.0; }
     vec2 res = vec2(fur, part);
 
+    if (uCat == 1) {
+        res = opU(res, vec2(sdEllipsoid(q - vec3(0.78 * R, -0.1 * R, 0.0), vec3(0.08, 0.07, 0.1) * R), 5.0));
+        for (int s = 0; s < 2; s++) {
+            float sg = s == 0 ? 1.0 : -1.0;
+            res = opU(res, vec2(sdEllipsoid(q - eyeC(sg), vec3(0.14, 0.19 * mix(0.1, 1.0, uEyeOpen), 0.17) * R), 6.0));
+            for (int k = 0; k < 3; k++) {  // baffi: fili sottilissimi, li disegna il bordo sfumato del ray marching
+                vec3 a = vec3(0.7 * R, -0.28 * R - float(k) * 0.05 * R, sg * 0.28 * R);
+                vec3 d = vec3(0.05, 0.08 - float(k) * 0.12, sg * 1.0) * 0.75 * R;  // corti, sottili, un po' all'indietro
+                res = opU(res, vec2(sdRoundCone(q, a, a + d, 0.014 * R, 0.004 * R), 27.0));
+            }
+        }
+        if (uJaw > 0.03) res = opU(res, vec2(sdEllipsoid(q - vec3(0.56 * R, -0.5 * R - uJaw * 0.18 * R, 0.0),
+                                                       vec3(0.17 * R, 0.03 * R + uJaw * 0.17 * R, 0.15 * R)), 7.0));
+        if (uTongue > 0.03) res = opU(res, vec2(sdEllipsoid(q - vec3(0.6 * R + 0.22 * R * uTongue, -0.55 * R - uJaw * 0.2 * R, 0.0),
+                                                           vec3(0.1 * R + 0.1 * R * uTongue, 0.045 * R, 0.09 * R)), 8.0));
+    } else {
     vec3 nc = vec3(0.6 * R + uMuzzle, -0.08 * R, 0.0);
     res = opU(res, vec2(sdEllipsoid(q - nc, vec3(0.21 * R, 0.17 * R, 0.24 * R)), 5.0));
     for (int s = 0; s < 2; s++) {
@@ -209,6 +262,7 @@ vec2 mapDog(vec3 pw) {
         tq = vec3(cos(dr) * tq.x - sin(dr) * tq.y, sin(dr) * tq.x + cos(dr) * tq.y, tq.z);
         res = opU(res, vec2(sdEllipsoid(tq, vec3(tl * 0.5, 0.07 * R, 0.17 * R)), 8.0));
     }
+    }
     for (int i = 0; i < 2; i++) res = opU(res, vec2(sdEar(q, i) - uFur * 0.15, 9.0));
     if (uCarry == 1) res = opU(res, vec2(length(q - vec3(0.5 * R + M * 0.7, -0.42 * R, 0.0)) - 0.34 * R, 13.0));
     if (uCarry == 2) res = opU(res, vec2(sdRoundCone(q, vec3(0.45 * R + M * 0.6, -0.42 * R, -2.2 * R),
@@ -219,8 +273,38 @@ vec2 mapDog(vec3 pw) {
         vec3 kq = vec3(bq.x, abs(bq.y) - 0.12 * R, abs(bq.z) - 1.15 * R);
         res = opU(res, vec2(min(bone, length(kq) - 0.2 * R), 18.0));
     }
+    if (uCarry == 5) {  // topolino a carica tenuto di traverso in bocca: corpo, orecchie rosa, coda che pende, chiavetta
+        vec3 mq = q - vec3(0.66 * R, -0.66 * R, 0.0);
+        res = opU(res, vec2(min(sdEllipsoid(mq - vec3(0.0, -0.04 * R, 0.1 * R), vec3(0.24, 0.22, 0.55) * R),
+                                sdRoundCone(mq, vec3(0.0, -0.08 * R, -0.42 * R), vec3(0.06 * R, -0.85 * R, -0.75 * R), 0.045 * R, 0.02 * R)), 33.0));
+        vec3 eq = vec3(mq.x, mq.y - 0.16 * R, abs(mq.z - 0.48 * R) - 0.1 * R);
+        res = opU(res, vec2(sdEllipsoid(eq, vec3(0.05, 0.11, 0.09) * R), 34.0));
+        res = opU(res, vec2(sdRoundCone(mq, vec3(0.0, 0.16 * R, 0.05 * R), vec3(0.0, 0.34 * R, 0.05 * R), 0.035 * R, 0.08 * R), 35.0));
+    }
     if (uCarry == 4) res = opU(res, vec2(sdRoundCone(q, vec3(0.45 * R + M * 0.6, -0.42 * R, 0.0),
                                                      vec3(0.5 * R + M * 0.6, -1.3 * R, 0.5 * R), 0.17 * R, 0.21 * R), 19.0));
+    return res;
+}
+
+// ------------------------------------------------------------------ casa del gatto: tiragraffi e lettiera
+const vec3 POST = vec3(-17.0, 0.0, 8.0);   // vedi CAT_POST in main.py
+const float POST_H = 62.0;
+const vec3 LITTER = vec3(14.0, 0.0, 6.0);  // vedi CAT_LITTER in main.py
+vec2 catHome(vec3 p) {
+    vec3 pp = p - POST;
+    float base = sdBox(pp - vec3(0.0, 1.2, 0.0), vec3(11.5, 1.2, 11.5)) - 0.6;
+    float top = sdBox(pp - vec3(0.0, POST_H + 1.6, 0.0), vec3(15.0, 1.6, 15.0)) - 1.0;  // grande quanto il gatto
+    float col = max(length(pp.xz) - 4.2, abs(pp.y - POST_H * 0.5) - POST_H * 0.5);
+    vec2 res = opU(vec2(min(base, top), 31.0), vec2(col, 30.0));
+    // pallina di pelo appesa a un filo sotto la piattaforma
+    vec3 bp = pp - vec3(13.0, POST_H - 14.0, 13.0);
+    res = opU(res, vec2(max(length(bp.xz) - 0.25, abs(bp.y - 7.0) - 7.0), 23.0));
+    res = opU(res, vec2(length(bp) - 2.4 - 0.3 * noise(bp * 2.0), 32.0));
+    vec3 lp = p - LITTER;
+    float tray = sdBox(lp - vec3(0.0, 3.8, 0.0), vec3(13.0, 3.8, 15.0)) - 1.0;
+    tray = max(tray, -(sdBox(lp - vec3(0.0, 6.6, 0.0), vec3(11.6, 4.0, 13.6)) - 0.6));
+    res = opU(res, vec2(tray, 28.0));
+    res = opU(res, vec2(sdBox(lp - vec3(0.0, 3.6, 0.0), vec3(11.6, 1.0, 13.6)) - 0.4 * noise(lp * 0.9), 29.0));
     return res;
 }
 
@@ -242,6 +326,9 @@ vec2 mapKennel(vec3 pw) {
     p = vec3(cos(a) * p.x + sin(a) * p.z, p.y, -sin(a) * p.x + cos(a) * p.z);
     p.z += 6.0;
     float W = KW, D = KD, H = KH, roofH = KROOF;
+    vec2 res;
+    if (uCat == 1) res = catHome(p);
+    else {
     float walls = sdBox(p - vec3(0.0, H * 0.5, 0.0), vec3(W, H * 0.5, D));
     walls = max(walls, -sdBox(p - vec3(0.0, H * 0.5 + 2.5, 0.0), vec3(W - 2.5, H * 0.5, D - 2.5)));
     float dw = 10.5, dh = 25.0;
@@ -256,7 +343,7 @@ vec2 mapKennel(vec3 pw) {
     vec3 r = roofR(p);
     float roof = sdBox(r, vec3(sqrt(W * W + roofH * roofH) * 0.5 + 5.0, 1.6, D + 5.0)) - 0.4;
     float base = sdBox(p - vec3(0.0, 1.0, 0.0), vec3(W + 1.5, 1.0, D + 1.5));
-    vec2 res = opU(vec2(min(walls, base), 11.0), vec2(roof, 12.0));
+    res = opU(vec2(min(walls, base), 11.0), vec2(roof, 12.0));
     if (uXmas == 1) {
         float hl = sqrt(W * W + roofH * roofH) * 0.5;
         // neve morbida sulle falde e sul comignolo di mattoni
@@ -277,6 +364,7 @@ vec2 mapKennel(vec3 pw) {
         vec3 bq = vec3(abs(mp.x), mp.y, mp.z);
         res = opU(res, vec2(min(length(bq - vec3(0.8, -1.5, 0.9)) - 0.85, length(mp - vec3(0.0, -2.5, 1.0)) - 0.85), 25.0));
         res = opU(res, vec2(sdEllipsoid(rotZ(bq - vec3(1.3, 1.0, 0.6), 0.4), vec3(1.5, 0.9, 0.6)), 26.0));
+    }
     }
     vec3 bp = p - vec3(40.0, 0.0, 22.0);  // ciotola davanti a destra
     float bowl = max(sdEllipsoid(bp - vec3(0.0, 1.0, 0.0), vec3(9.0, 5.5, 9.0)), bp.y - 4.6);
@@ -334,6 +422,10 @@ float groundShadow(vec3 g) {
         p.z += 6.0;
         vec2 q = abs(p.xz + vec2(4.0, -4.0)) - vec2(31.0, 28.0);
         float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+        if (uCat == 1) {
+            vec2 a = abs(p.xz - POST.xz) - vec2(12.0), b = abs(p.xz - LITTER.xz) - vec2(14.0, 16.0);
+            d = min(length(max(a, 0.0)) + min(max(a.x, a.y), 0.0), length(max(b, 0.0)) + min(max(b.x, b.y), 0.0));
+        }
         float dbowl = min(length(p.xz - vec2(40.0, 16.0)), length(p.xz - vec2(-40.0, 16.0))) - 9.0;
         return max(0.32 * (1.0 - smoothstep(-4.0, 9.0, d)), 0.3 * (1.0 - smoothstep(-2.0, 4.0, dbowl)));
     }
@@ -341,7 +433,9 @@ float groundShadow(vec3 g) {
     float lift = 1.0 - smoothstep(0.0, 40.0, uRoot.y);
     float rc = uBodyR.x;
     vec2 sq = vec2(p.x, p.z * 1.3);
-    float d = segDist(sq, vec2(uHip.x - uBodyR.y * 0.6, 0.0), vec2(uChest.x + rc * 0.4, 0.0));
+    vec2 m = vec2(uMid.x, uMid.z * 1.3);
+    float d = min(segDist(sq, vec2(uHip.x - uBodyR.y * 0.6, uHip.z * 1.3), m),
+                  segDist(sq, m, vec2(uChest.x + rc * 0.4 * cos(uCurlA), (uChest.z + rc * 0.4 * sin(uCurlA)) * 1.3)));
     float a = 0.3 * (1.0 - smoothstep(rc * 0.3, rc * 1.35, d));
     for (int i = 0; i < 4; i++) {
         vec3 f = uLeg[i * 4 + 3];
@@ -354,7 +448,7 @@ float groundShadow(vec3 g) {
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
 
 vec4 smoke(vec2 sp) {  // fumo del comignolo: sbuffi 2D che salgono, si allargano e svaniscono (alpha premoltiplicato)
-    if (uScene != 1 || uXmas == 0) return vec4(0.0);
+    if (uScene != 1 || uXmas == 0 || uCat == 1) return vec4(0.0);
     float a = radians(-10.0);
     vec3 k = vec3(CHIMNEY.x, CHIMNEY.y + KROOF * 0.45 + 1.5, CHIMNEY.z - 6.0);  // in cima, nello spazio della cuccia
     vec3 c = vec3(cos(a) * k.x - sin(a) * k.z, k.y, sin(a) * k.x + cos(a) * k.z) * uKScale;
@@ -375,6 +469,19 @@ vec3 dogAlbedo(vec3 pw, float m) {
     vec3 q = toHead(p);
     float R = uHeadR, rc = uBodyR.x;
     float n = furN(p * 1.5) * 0.4 + strand(p) * 0.6;
+    if (uCat == 1 && m == 5.0) return lin(vec3(0.86, 0.5, 0.52)) * (0.9 + 0.15 * noise(q * 3.0));  // tartufo rosa
+    if (m == 27.0) return lin(vec3(0.82, 0.8, 0.76));  // baffi: chiari ma non bianco acceso
+    if (uCat == 1 && m == 6.0) {  // occhio di gatto: iride verde-ambra, pupilla a fessura verticale
+        float sg = sign(q.z);
+        vec3 f = normalize(vec3(0.9, 0.0, sg * 0.4));
+        vec3 v = normalize(q - eyeC(sg));
+        float c = dot(v, f);
+        float slit = abs(dot(v, normalize(cross(f, vec3(0.0, 1.0, 0.0)))));
+        if (uEyeOpen < 0.3) return lin(vec3(0.12, 0.07, 0.04));  // occhi chiusi: una riga scura
+        if (dot(v, normalize(vec3(0.7, 0.55, sg * 0.4))) > 0.97) return vec3(0.9);
+        vec3 iris = mix(vec3(0.45, 0.42, 0.1), vec3(0.78, 0.68, 0.22), smoothstep(0.5, 0.95, c));
+        return lin(c < 0.45 ? vec3(0.05, 0.04, 0.02) : slit < 0.07 + 0.05 * (1.0 - uEyeOpen) && c > 0.6 ? vec3(0.02) : iris);
+    }
     if (m == 5.0) {  // naso: narici scure e tartufo leggermente granuloso
         vec3 nq = q - vec3(0.6 * R + uMuzzle, -0.08 * R, 0.0);
         float nostril = smoothstep(0.07 * R, 0.035 * R, length(vec2(nq.y + 0.04 * R, abs(nq.z) - 0.11 * R))) * step(0.08 * R, nq.x);
@@ -397,6 +504,9 @@ vec3 dogAlbedo(vec3 pw, float m) {
     }
     if (m == 14.0) return lin(vec3(0.45, 0.3, 0.17)) * (0.8 + 0.3 * noise(q * vec3(0.6, 0.6, 3.0)));
     if (m == 18.0) return lin(vec3(0.93, 0.89, 0.8)) * (0.9 + 0.15 * noise(q * 2.0));  // osso
+    if (m == 33.0) return lin(vec3(0.6, 0.6, 0.64)) * (0.85 + 0.2 * noise(q * 2.0));  // topolino grigio
+    if (m == 34.0) return lin(vec3(0.94, 0.63, 0.7));  // orecchie rosa
+    if (m == 35.0) return lin(vec3(0.88, 0.68, 0.25));  // chiavetta dorata
     if (m == 19.0) return lin(fract(q.y / (0.3 * R)) < 0.5 ? vec3(0.8, 0.15, 0.15) : vec3(0.95));  // calzino a righe
 
     vec3 coat = lin(uCoat), coat2 = lin(uCoat2), mark = lin(uMark);
@@ -437,13 +547,58 @@ vec3 dogAlbedo(vec3 pw, float m) {
     } else if (uPattern == 4) {  // bassotto: dorso più scuro
         if (m == 1.0 || m == 4.0) w = -smoothstep(uChest.y + rc * 0.4, uChest.y + rc * 1.0, p.y) * 0.5;
     }
+    float stripe = 0.0;
+    vec3 chestU = uChest;
+    if (uPattern == 6 && uCurlA > 0.001) {  // acciambellato: i colori si leggono sul corpo "raddrizzato"
+        vec2 d = p.xz - uHip.xz;
+        float a = clamp(atan(d.y, d.x), 0.0, uCurlA) * smoothstep(rc * 0.5, rc * 1.3, length(d));
+        d = mat2(cos(a), -sin(a), sin(a), cos(a)) * d;
+        p = vec3(uHip.x + d.x, p.y, uHip.z + d.y);
+        vec2 dc = (uChest.xz - uHip.xz) / (1.0 - 0.3 * uCurlA / 2.7);  // torace riportato dritto (vedi bend in dog3d)
+        dc = mat2(cos(uCurlA), -sin(uCurlA), sin(uCurlA), cos(uCurlA)) * dc;
+        chestU = vec3(uHip.x + dc.x, uChest.y, uHip.z + dc.y);
+    }
+    if (uPattern == 6) {  // rosso tigrato e bianco (Pippi): w = bianco, stripe = strisce rosso scuro
+        float blot = noise(p * 0.09 + 3.0);
+        if (m == 4.0) {
+            float hw = mix(0.32 * R, 0.05 * R, smoothstep(-0.15 * R, 0.42 * R, q.y));  // muso bianco che sale a V tra gli occhi
+            w = step(abs(q.z), hw + edge * 0.1 * R) * smoothstep(0.15 * R, 0.3 * R, q.x) * step(q.y, 0.45 * R);
+            w = max(w, smoothstep(-0.12 * R, -0.3 * R, q.y + edge * 0.3 * R) * smoothstep(0.1 * R, 0.35 * R, q.x));
+            w = max(w, smoothstep(-0.4 * R, -0.6 * R, q.y));  // gola
+            stripe = smoothstep(0.4, 0.9, sin(q.z / R * 15.0)) * smoothstep(0.2 * R, 0.45 * R, q.y) * 0.8   // la M in fronte
+                   + smoothstep(0.5, 0.9, sin((q.y + 0.3 * q.x) / R * 16.0)) * smoothstep(0.45 * R, 0.7 * R, abs(q.z)) * 0.6;
+        }
+        if (m == 1.0) {
+            float k = clamp((p.x - uHip.x) / (chestU.x - uHip.x), 0.0, 1.0);  // lungo la schiena: le cosce restano rosse
+            float sy = mix(uHip.y - rc * 0.75, chestU.y - rc * 0.05, k);
+            w = smoothstep(sy, sy - rc * 0.45, p.y + edge * rc * 1.2);  // pancia
+            w = max(w, smoothstep(chestU.x + rc * 0.15, chestU.x + rc * 0.55, p.x + edge * rc) * step(p.y, uNeck0.y + rc * 0.5));
+            w = max(w, smoothstep(0.66, 0.7, blot) * step(rc * 0.45, abs(p.z)));  // macchie bianche sui fianchi
+            stripe = smoothstep(0.25, 0.8, sin((p.x + (n - 0.5) * rc * 0.8) / (rc * 0.3)));
+        }
+        if (m == 2.0) {
+            w = p.x > (chestU.x + uHip.x) * 0.5 ? 1.0 : smoothstep(legH * 0.5, legH * 0.3, p.y + edge * 4.0);
+            stripe = smoothstep(0.3, 0.8, sin(p.y / (legH * 0.12)));
+        }
+        if (m == 3.0) {  // anelli lungo la coda, punta più scura
+            float d = length(p - uTail[0]);
+            stripe = smoothstep(0.2, 0.7, sin(d / (uTailR * 1.6))) * 0.85 + smoothstep(uTailR * 3.0, 0.0, length(p - uTail[5])) * 0.6;
+        }
+    }
     vec3 c = w >= 0.0 ? mix(coat, mark, clamp(w, 0.0, 1.0)) : mix(coat, coat2, -w);
+    if (uPattern == 6) c = mix(mix(coat, coat2, clamp(stripe, 0.0, 1.0)), mark, clamp(w, 0.0, 1.0));
     if (m == 2.0 && p.y < uLegR.y * 1.4) {  // dita: solchi sulla punta della zampa
         float toes = smoothstep(0.75, 1.0, abs(sin(p.z * 3.14159 / (uLegR.y * 0.55))));
         c *= 1.0 - 0.35 * toes * smoothstep(uLegR.y * 1.4, uLegR.y * 0.4, p.y);
     }
-    if (m == 9.0) c = uPattern == 1 ? coat : mix(coat, coat2, 0.75);
-    if (m == 4.0) {  // labbra nere lungo la bocca, dall'angolo fino al naso
+    if (m == 9.0) c = uPattern == 1 || uPattern == 6 ? coat : mix(coat, coat2, 0.75);
+    if (m == 9.0 && uCat == 1) {  // dentro l'orecchio rosa
+        int i = q.z > 0.0 ? 0 : 1;
+        vec3 r = q - uEarB[i], d = uEarD[i], en = uEarN[i];
+        float u = dot(r, d) / uEarDim.x, s = abs(dot(r, cross(d, en))) / uEarDim.y;
+        c = mix(c, lin(vec3(0.93, 0.66, 0.64)), step(0.0, dot(r, en)) * step(s, (1.0 - u) * 0.6) * step(u, 0.85));
+    }
+    if (m == 4.0 && uCat == 0) {  // labbra nere lungo la bocca, dall'angolo fino al naso
         float lip = smoothstep(0.07 * R, 0.02 * R, abs(q.y - MOUTH_Y * R)) * smoothstep(MOUTH_X * R, MOUTH_X * R + 0.12 * R, q.x)
                   * smoothstep(0.02 * R, -0.08 * R, abs(q.z) - mouthW(q.x, R));
         c = mix(c, vec3(0.05, 0.04, 0.04), 0.8 * lip);
@@ -452,6 +607,7 @@ vec3 dogAlbedo(vec3 pw, float m) {
         if (m == 4.0) c = mix(c, coat2, 0.45 * smoothstep(0.1 * R, -0.5 * R, q.x) * smoothstep(-0.1 * R, 0.4 * R, q.y));
         c = mix(c, coat2, 0.35 * (1.0 - n));
     }
+    if (uPattern == 6) return c * (0.94 + 0.1 * furN(p * 1.5));  // pelo corto: niente ciocche
     return c * clamp(0.88 + 0.24 * n, 0.6, 1.2);  // il rumore del pelo non deve mai annerire
 }
 
@@ -462,6 +618,12 @@ vec3 kennelAlbedo(vec3 pw, float m) {
     k = vec3(cos(a) * k.x + sin(a) * k.z, k.y, -sin(a) * k.x + cos(a) * k.z);
     k.z += 6.0;
     if (m == 20.0) return lin(vec3(0.93, 0.95, 1.0)) * (0.93 + 0.07 * noise(p * 1.7));  // neve
+    if (m == 28.0) return lin(vec3(0.36, 0.62, 0.66));  // vaschetta di plastica
+    if (m == 29.0) return lin(vec3(0.8, 0.76, 0.68)) * (0.75 + 0.35 * noise(p * 1.8));  // sabbietta
+    if (m == 30.0) return lin(vec3(0.78, 0.65, 0.45)) * (0.65 + 0.35 * smoothstep(0.1, 0.5, abs(fract(k.y / 1.3) - 0.5)))
+                          * (0.85 + 0.25 * noise(k * vec3(2.0, 0.5, 2.0)));  // corda di sisal
+    if (m == 31.0) return lin(uRoof) * (0.85 + 0.2 * noise(p * 1.2));  // moquette del tiragraffi
+    if (m == 32.0) return lin(vec3(0.85, 0.25, 0.3)) * (0.8 + 0.3 * noise(p * 2.0));  // pallina di pelo
     if (m == 21.0) {  // mattoni del comignolo
         float row = k.y / 2.0;
         float bx = fract((k.x + k.z) / 4.0 + 0.5 * mod(floor(row), 2.0));

@@ -57,6 +57,16 @@ BREEDS = {
                     "sconosciuti ma affettuosissimo con chi ami, e felice per ogni passeggiata",
         greeting="Eccomi! Ti ho sentito subito. Andiamo a fare un giro?", greet_action="wag",
     ),
+    # Pippi, il gatto rosso e bianco delle foto: dorso, testa e coda rossi tigrati, muso, petto, pancia e zampe bianchi
+    "pippi": dict(
+        label="Pippi (gatto rosso e bianco)", cat=True, Hs=19, rc=8.4, rh=8.2, Lb=29, R=8.6, muzzle=2.4, neck=7.5,
+        neckR=5.4, tail=29, tailR=1.9, tailFur=0.3, legR=2.3, fur=0.25, ear="cat", earLen=0.62, tailBias=0.3,
+        thigh=0.62, tail_kind="cat", pattern=6, coat="#E08A3E", coat2="#B35E26", mark="#F7F2EA",
+        roof="#6F8FA6", wood="#D9C3A0", independence=0.7, kscale=1.0,
+        personality="un gatto maschio rosso e bianco, affettuoso a modo suo, curioso, pigro e un po' vanitoso; ami "
+                    "le coccole quando decidi tu, dormire al sole, fare le fusa e farti capire chi comanda in casa",
+        greeting="Mrrr? Ah, sei tu. Va bene, ti ascolto.", greet_action="meow",
+    ),
 }
 DEFAULT_BREED = "maremmano"
 # andature: sfasamento di ogni zampa (anteriore vicina, anteriore lontana, posteriore vicina, posteriore lontana)
@@ -137,10 +147,19 @@ POSE_DEFAULTS = dict(
     paw=0.0,        # dà la zampa (anteriore vicina sollevata verso di te)
     belly=0.0,      # pancia all'aria
     dig=0.0,        # scava con le zampe anteriori
+    climb=0.0,      # gatto: busto in verticale attorno al bacino (1 = arrampicato sul tiragraffi)
+    claw=0.0,       # gatto: zampe anteriori che graffiano / si arrampicano a turno
+    knead=0.0,      # gatto: impasta (zampe anteriori che premono a turno)
+    groom=0.0,      # gatto: zampa alla bocca per leccarsi
+    wiggle=0.0,     # gatto: sedere che ondeggia prima del balzo
+    arch=0.0,       # gatto: schiena inarcata, sulle punte, pelo e coda gonfi (soffia)
+    curl=0.0,       # gatto: acciambellato, la schiena si piega di lato e la coda avvolge il muso
 )
+# il gatto si accuccia, si alza e si gira con movimenti più morbidi del cane
+CAT_RATES = dict(front=0.6, rear=0.6, curl=0.7, climb=0.8, belly=0.7)
 RATES = dict(front=4, rear=4, headYaw=6, headPitch=6, headRoll=6, jaw=18, tongue=10, eyes=14, ears=7,
              tailUp=4, wagAmp=5, wagFreq=4, scratch=6, shake=8, hop=30, breath=2,
-             paw=6, belly=3, dig=8)
+             paw=6, belly=3, dig=8, climb=5, claw=8, knead=6, groom=6, wiggle=8, arch=5, curl=2.5)
 
 
 class Dog:
@@ -173,11 +192,13 @@ class Dog:
     # ------------------------------------------------------------ animazione
     def step(self, dt):
         self.t += dt
+        cat = self.b.get("cat")
         for k, v in self.target.items():
-            self.p[k] += (v - self.p[k]) * min(1.0, dt * RATES[k])
+            self.p[k] += (v - self.p[k]) * min(1.0, dt * RATES[k] * (CAT_RATES.get(k, 1.0) if cat else 1.0))
         diff = self.yaw_target - self.yaw
-        self.yaw += math.copysign(min(abs(diff), dt * math.radians(300), abs(diff) * dt * 7 + dt * 0.5), diff)
-        self.wag_phase += dt * min(self.p["wagFreq"], 4.2) * math.tau  # oltre ~4 Hz a 30 fps sembra a scatti
+        turn = 300 if not cat or abs(self.speed) > 30 else 170  # da fermo il gatto si gira con calma
+        self.yaw += math.copysign(min(abs(diff), dt * math.radians(turn), abs(diff) * dt * 7 + dt * 0.5), diff)
+        self.wag_phase += dt * min(self.p["wagFreq"], 1.6 if self.b.get("cat") else 4.2) * math.tau  # oltre ~4 Hz a 30 fps sembra a scatti
         if abs(self.speed) > 0.1:  # velocità negativa = passi all'indietro
             freq = self.gait_params()[3]
             self.gait = (self.gait + math.copysign(freq * dt, self.speed)) % 1.0
@@ -219,13 +240,18 @@ class Dog:
         bob += flex * 0.8 * math.sin(g + 1.2)       # in volo dopo la spinta delle posteriori
         breath = math.sin(self.t * (2.4 if P["breath"] > 1.5 else 1.4)) * 0.35 * P["breath"]
 
-        cy = lerp(b["Hs"] + rc * 0.45, rc * 0.98 + 0.5, f) + bob + breath * 0.5 + flex * math.sin(g + 2.6)
-        hy = lerp(self.Hh + rh * 0.4, rh * 0.95, r) + bob + flex * math.sin(g + 0.4)
+        ar = P["arch"]  # sulle punte: il corpo sale e si accorcia, la schiena fa la gobba
+        cy = lerp(b["Hs"] + rc * 0.45, rc * 0.98 + 0.5, f) + bob + breath * 0.5 + flex * math.sin(g + 2.6) + ar * b["Hs"] * 0.08
+        hy = lerp(self.Hh + rh * 0.4, rh * 0.95, r) + bob + flex * math.sin(g + 0.4) + ar * b["Hs"] * 0.1
         if f > 0.5 and r < 0.5:  # inchino: il posteriore resta alto
             hy = lerp(self.Hh + rh * 0.4, self.Hh + rh * 0.7, f)
         cx = Lb / 2
+        Lb *= 1 - 0.15 * ar
         hx = cx - math.sqrt(max(Lb * Lb - (cy - hy) ** 2, (Lb * 0.6) ** 2))
-        chest, hip = (cx, cy, 0.0), (hx, hy, 0.0)
+        hz = math.sin(self.t * 15) * rh * 0.2 * P["wiggle"]  # gatto in agguato: il sedere ondeggia
+        chest, hip = (cx, cy, 0.0), (hx, hy, hz)
+        th = P["climb"] * 1.35  # busto ritto: tutto ruota attorno al bacino
+        cth, sth = math.cos(th), math.sin(th)
 
         legs = []
         lift = b["Hs"] * (0.08 * w_walk + 0.15 * w_trot + 0.2 * w_gallop)
@@ -249,6 +275,19 @@ class Dog:
                     foot_s = add(foot_s, (math.sin(ph) * stride * 0.45 * P["dig"], max(0.0, math.cos(ph)) * 4 * P["dig"], 0))
                     wrist_s = add(foot_s, (-0.04 * b["Hs"], self.pastern, 0))
                 foot, wrist = vlerp(foot_s, foot_l, f), vlerp(wrist_s, wrist_l, f)
+                if P["knead"] > 0.01:  # impasta: una zampa per volta
+                    k = max(0.0, math.sin(self.t * 6 + (0 if side > 0 else math.pi))) * 0.18 * b["Hs"] * P["knead"]
+                    foot, wrist = add(foot, (0, k, 0)), add(wrist, (0, k, 0))
+                if P["climb"] > 0.01:  # zampe avanti lungo il busto, sul palo: graffiano a turno
+                    reach = self.fU + self.fL
+                    alt = math.sin(self.t * 9 + (0 if side > 0 else math.pi)) * 0.12 * b["Hs"] * P["claw"]
+                    foot_c = (top[0] + reach * 0.8 + alt, top[1] - rc * 0.45, side * rc * 0.4)
+                    foot = vlerp(foot, foot_c, P["climb"])
+                    wrist = vlerp(wrist, add(foot_c, (-self.pastern, 0.4, 0)), P["climb"])
+                if side == 1 and P["groom"] > 0.01:  # zampa alla bocca
+                    foot_g = (cx + rc * 1.25, cy + rc * 0.55, rc * 0.25)
+                    foot = vlerp(foot, foot_g, P["groom"])
+                    wrist = vlerp(wrist, add(foot_g, (-self.pastern * 0.3, -self.pastern, 0)), P["groom"])
                 if side == 1 and P["paw"] > 0.01:  # dà la zampa
                     reach = self.fU + self.fL
                     foot_p = (top[0] + reach * 0.75, top[1] - reach * 0.25 + math.sin(self.t * 3) * 0.8, rc * 0.75)
@@ -261,7 +300,7 @@ class Dog:
                 mid, wrist = ik2(top, wrist, self.fU, self.fL, (-1, 0, 0))
                 legs += [top, mid, wrist, foot]
             else:
-                top = (hx - rh * 0.1, hy - rh * 0.3, side * rh * 0.55)
+                top = (hx - rh * 0.1, hy - rh * 0.3, hz + side * rh * 0.55)
                 foot_s = (top[0] + off - 0.5, r2 * 0.9 + up, side * rh * 0.52)
                 hock_s = add(foot_s, (-self.meta * 0.25, self.meta * 0.97, 0))
                 foot_l = (top[0] + self.tS * 0.95, r2 * 0.9, side * rh * 0.7)
@@ -277,6 +316,11 @@ class Dog:
                     kick = math.sin(self.t * 7 + i) * 2.5
                     foot = vlerp(foot, add(top, (3 + kick, -self.tT * 0.9, side * 2)), P["belly"])
                     hock = vlerp(hock, add(top, (-2, -self.tT * 0.6, side * 2)), P["belly"])
+                if th > 1e-3:  # busto ritto: le posteriori restano verso terra (ruotate all'indietro nel corpo)
+                    def down(v):
+                        d = sub(v, top)
+                        return add(top, (d[0] * cth - d[1] * sth, d[0] * sth + d[1] * cth, d[2]))
+                    foot, hock = down(foot), down(hock)
                 mid, hock = ik2(top, hock, self.tT, self.tS, (1, 0, 0))
                 legs += [top, mid, hock, foot]
 
@@ -284,24 +328,43 @@ class Dog:
         neck0 = (cx + rc * 0.5, cy + rc * 0.45, 0.0)
         head_yaw, head_pitch = P["headYaw"], P["headPitch"]
         head_pitch += 0.1 * w_gallop * moving * math.sin(g + 0.8)  # la testa accompagna il galoppo
+        head_pitch += th * 0.75  # sul palo guarda avanti, non il cielo
         alpha = math.radians(60) - head_pitch * 0.55 + f * 0.1 - 0.25 * w_gallop * moving
         nd = mat_vec(rot_yaw(head_yaw * 0.45), (math.cos(alpha), math.sin(alpha), 0))
         head_pos = add(neck0, mul(nd, b["neck"]))
         head_rot = mat_mul(rot_yaw(head_yaw), mat_mul(rot_pitch(head_pitch - 0.12), rot_roll(P["headRoll"])))  # testa portata alta
+        # punto di mezzo della schiena (lo shader fa il corpo con due tratti: bacino-metà-torace)
+        hip_a, chest_a = add(hip, (0, rh * 0.15, 0)), add(chest, (0, rc * 0.1, 0))
+        mid = add(mul(add(hip_a, chest_a), 0.5), (0, ar * rc * 0.8, 0))
+        phi = P["curl"] * 2.7
+        if phi > 1e-3:  # ciambella: torace, zampe anteriori, collo e testa girano di lato attorno al bacino
+            def bend(v, a=phi, k=1.0 - 0.3 * P["curl"]):
+                d = mul(sub(v, hip), k)
+                return add(hip, mat_vec(rot_yaw(a), d))
+            chest_a, chest = bend(chest_a), bend(chest)
+            mid = add(bend(mid, phi / 2, 1.0), mat_vec(rot_yaw(phi / 2), (0, 0, -rc * 0.25 * P["curl"])))
+            legs[:8] = [bend(v) for v in legs[:8]]
+            neck0, head_pos = bend(neck0), add(bend(head_pos), (0, -rc * 0.45 * P["curl"], 0))  # testa appoggiata
+            head_rot = mat_mul(rot_yaw(phi), head_rot)
 
         # coda
         tail = [(hx - rh * 0.95, hy + rh * 0.4, 0.0)]
         kind = b["tail_kind"]
         up = max(-1.0, min(1.0, P["tailUp"] + b.get("tailBias", 0.0)))  # il maremmano porta la coda bassa
         base = {"plume": lerp(-1.1, 0.8, (up + 1) / 2), "low": lerp(-1.3, 0.6, (up + 1) / 2),
-                "thin": lerp(-0.9, 0.7, (up + 1) / 2), "curl": lerp(0.6, 1.35, (up + 1) / 2)}[kind]
-        curl = {"plume": 0.05, "low": -0.04 + 0.08 * up, "thin": 0.04, "curl": 0.62}[kind]
+                "thin": lerp(-0.9, 0.7, (up + 1) / 2), "curl": lerp(0.6, 1.35, (up + 1) / 2),
+                "cat": lerp(-0.45, 1.4, (up + 1) / 2) - th}[kind]  # il gatto la porta dritta, a punto interrogativo
+        curl = {"plume": 0.05, "low": -0.04 + 0.08 * up, "thin": 0.04, "curl": 0.62, "cat": 0.03 + 0.1 * max(up, 0)}[kind]
         if kind == "low":  # punta leggermente rialzata
             curl = 0.1
         seg = b["tail"] / 5
         for i in range(5):
             a = base + curl * i
-            w = P["wagAmp"] * math.sin(self.wag_phase - i * 0.55) * (0.5 + 0.18 * i)
+            # il gatto muove soprattutto la punta: la base resta ferma
+            w = P["wagAmp"] * math.sin(self.wag_phase - i * 0.55) * ((i / 4) ** 1.5 * 1.1 if kind == "cat" else 0.5 + 0.18 * i)
+            if phi > 1e-3:  # coda distesa a terra che gira attorno al corpo fino al muso
+                a = lerp(a, -0.5 if i == 0 else 0.0, P["curl"])
+                w = lerp(w, P["curl"] * (-0.3 + 2.0 * (i / 4) ** 2), P["curl"])  # lungo il fianco esterno, poi sotto il muso
             d = (-math.cos(a) * math.cos(w), math.sin(a), math.sin(w))
             tail.append(add(tail[-1], mul(d, seg)))
 
@@ -315,6 +378,12 @@ class Dog:
                 D = norm((-0.15 + 0.35 * e + bounce, -1 + 0.55 * max(e, 0), side * (0.32 + 0.1 * max(e, 0))))
                 N = norm(sub((0, 0, side), mul(D, D[2] * side)))
                 dims = (R * b["earLen"], R * 0.44, R * 0.1, b.get("earTaper", 0.15))
+            elif b["ear"] == "cat":  # triangoli larghi, più distanti e aperti verso i lati; all'indietro se è arrabbiato
+                back = max(-e, 0)
+                B = (-0.05 * R, 0.58 * R, side * 0.46 * R)
+                D = norm((0.08 + 0.08 * e - 0.9 * back, 1 - 0.6 * back, side * (0.42 + 0.35 * back)))
+                N = norm(sub((1, 0, 0), mul(D, D[0])))
+                dims = (R * b["earLen"], R * 0.4, R * 0.08, 0.92)
             else:
                 back = max(-e, 0)
                 B = (-0.12 * R, 0.62 * R, side * 0.42 * R)
@@ -324,8 +393,10 @@ class Dog:
             ears.append((B, D, N))
 
         roll = math.sin(self.t * 26) * 0.35 * P["shake"] - 2.6 * P["belly"] + math.sin(self.t * 2.2) * 0.12 * P["belly"]
-        body_rot = mat_mul(rot_yaw(self.yaw), rot_roll(roll))
+        body_rot = mat_mul(rot_yaw(self.yaw), mat_mul(rot_pitch(-th), rot_roll(roll)))
         root = (0.0, P["hop"], 0.0)
+        if th > 1e-3:  # ruota attorno al bacino, che resta dov'è
+            root = add(root, sub(mat_vec(rot_yaw(self.yaw), hip), mat_vec(body_rot, hip)))
         if P["belly"] > 0.001:
             # il rotolamento gira attorno al punto a terra: il torace scivolerebbe di lato e sotto il pavimento.
             # Lo riporto sul posto, con schiena e testa appoggiate a terra (la testa affonda appena nel pelo).
@@ -334,7 +405,7 @@ class Dog:
             head_dy = mat_vec(body_rot, head_pos)[1] - c_rot[1]
             target = (c_up[0], max(rc * 1.05, R * 0.5 - head_dy), c_up[2])
             root = add(root, mul(sub(target, c_rot), P["belly"]))
-        return dict(chest=chest, hip=hip, legs=legs, neck0=neck0, head_pos=head_pos, head_rot=head_rot,
+        return dict(chest=chest, hip=hip, mid=mid, chest_a=chest_a, curl=phi, legs=legs, neck0=neck0, head_pos=head_pos, head_rot=head_rot,
                     tail=tail, ears=ears, ear_dims=dims, body_rot=body_rot, root=root,
                     carry=self.carry)
 

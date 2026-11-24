@@ -82,11 +82,14 @@ def set_dog_uniforms(prog, dog, rig):
     for name in ("chest", "hip", "neck0"):
         u("u" + name[0].upper() + name[1:], _v3(rig[name]))
     u("uHeadPos", _v3(rig["head_pos"]))
+    u("uMid", _v3(rig["mid"]))
+    u("uChestA", _v3(rig["chest_a"]))
+    u("uCurlA", float(rig["curl"]))
     u("uHeadRot", _m3(rig["head_rot"]))
     u("uBodyR", QVector2D(float(b["rc"]), float(b["rh"])))
     for k, v in (("uHeadR", b["R"]), ("uMuzzle", b["muzzle"]), ("uJaw", P["jaw"]), ("uTongue", P["tongue"]),
-                 ("uEyeOpen", P["eyes"]), ("uFur", b["fur"]), ("uNeckR", b["neckR"]), ("uTailR", b["tailR"]),
-                 ("uTailFur", b["tailFur"])):
+                 ("uEyeOpen", P["eyes"]), ("uFur", b["fur"] + P["arch"] * 1.6), ("uNeckR", b["neckR"]),
+                 ("uTailR", b["tailR"] * (1 + P["arch"] * 0.9)), ("uTailFur", b["tailFur"] + P["arch"] * 2.2)):  # soffia: pelo gonfio
         u(k, float(v))
     for i, pt in enumerate(rig["legs"]):
         u(f"uLeg[{i}]", _v3(pt))
@@ -102,6 +105,7 @@ def set_dog_uniforms(prog, dog, rig):
         u(f"uEarN[{i}]", _v3(N))
     u("uEarDim", QVector4D(*(float(x) for x in rig["ear_dims"])))
     u("uPattern", int(b["pattern"]))
+    u("uCat", int(b.get("cat", False)))
     for k in ("coat", "coat2", "mark"):
         u("u" + k[0].upper() + k[1:], _rgb(b[k]))
     pts = [rig["chest"], rig["hip"], rig["head_pos"], *rig["legs"], *rig["tail"]]
@@ -117,6 +121,7 @@ def set_kennel_uniforms(prog, b, food=1.0, xmas=False, t=0.0):
     prog.setUniformValue("uRoof", _rgb(b["roof"]))
     prog.setUniformValue("uKScale", float(b["kscale"]))
     prog.setUniformValue("uFood", float(food))
+    prog.setUniformValue("uCat", int(b.get("cat", False)))
 
 
 def kennel_size(b, xmas=False):

@@ -433,6 +433,150 @@ class BrainTest(unittest.TestCase):
             self.assertIsNotNone(self.areas.at(self.brain.x, self.brain.y))
 
 
+class CatTest(unittest.TestCase):
+    """Pippi: niente cuccia ma tiragraffi e lettiera, fa le fusa invece di dare la zampa, miagola invece di abbaiare."""
+
+    def setUp(self):
+        import main
+        self.dog = dog3d.Dog("pippi")
+        self.brain = b = Brain(self.dog, Areas([(0, 0, 1920, 1080)]), random.Random(2))
+        s = self.dog.b["kscale"]
+        b.post, b.litter = main.home_point(400, 1040, s, *main.CAT_POST), main.home_point(400, 1040, s, *main.CAT_LITTER)
+        b.post_h = main.CAT_POST_TOP * s
+        b.x, b.y = 900, 900
+        b.next_scene = 1e9
+
+    def run_for(self, seconds, cond=lambda: False):
+        for _ in range(int(seconds * 30)):
+            self.brain.update(1 / 30)
+            if cond():
+                return True
+        return False
+
+    def test_climbs_the_post_and_sleeps_on_top_then_jumps_down(self):
+        b = self.brain
+        b.go_home(run=True)
+        self.assertTrue(self.run_for(60, lambda: b.phase == "top" and b.phase_t > 1))
+        self.assertAlmostEqual(self.dog.p["hop"], b.post_h, delta=self.dog.b["rc"] * 0.3 + 1)  # affonda un po' nel cuscino
+        self.assertTrue(b.napping)
+        b.timer = 0
+        self.assertTrue(self.run_for(5, lambda: b.activity != "climb"))
+        self.run_for(1)
+        self.assertLess(self.dog.p["hop"], 1)
+
+    def test_scratches_the_post_and_uses_the_litter(self):
+        b = self.brain
+        b.start_cat("post")
+        self.assertTrue(self.run_for(60, lambda: b.phase == "scratch"))
+        self.run_for(1)
+        self.assertGreater(self.dog.p["climb"], 0.5)
+        self.assertIn("scratch", b.sfx)
+        b.start_cat("litter")
+        self.assertTrue(self.run_for(60, lambda: b.activity == "zoom"))  # dopo la lettiera, la corsa pazza
+
+    def test_purrs_meows_and_never_fetches(self):
+        b = self.brain
+        b.pet()
+        self.assertIn(b.activity, ("purring", "bellyrub"))
+        b.perform(["bark", "happy"])
+        self.assertEqual(list(b.queue), ["meow", "purr"])
+        b.throw("ball", 1300, 700)
+        self.run_for(40)
+        self.assertEqual(self.dog.carry, 0)  # la prende a zampate, non la riporta
+        self.assertTrue(ai_handler.system_prompt("x", "y", cat=True).startswith("Sei un gatto"))
+
+    def test_naps_curled_up_like_a_donut(self):
+        b = self.brain
+        b.start("nap", 30)
+        self.run_for(4)
+        self.assertGreater(self.dog.p["curl"], 0.9)
+        self.assertLess(self.dog.p["eyes"], 0.01)
+        rig = self.dog.rig()
+        self.assertLess(rig["chest"][0], rig["hip"][0])  # il torace è girato di lato, verso la coda
+        b.call()  # lo chiami: si srotola
+        self.run_for(3)
+        self.assertLess(self.dog.p["curl"], 0.1)
+
+    def test_freezes_then_pounces_on_birds(self):
+        b = self.brain
+        b.scene("birds")
+        self.run_for(0.8)
+        self.assertLess(self.dog.p["breath"], 0.5)  # immobile, trattiene il respiro
+        self.assertGreater(self.dog.p["front"], 0.15)  # acquattato
+        self.assertTrue(self.run_for(60, lambda: b.leap is not None))  # balzo
+        self.assertTrue(self.run_for(60, lambda: not b.critters))
+
+    def test_arches_and_hisses_at_a_visiting_dog(self):
+        b = self.brain
+        b.scene("friend")
+        self.assertFalse(b.friend.dog.b.get("cat"))
+        self.assertTrue(self.run_for(30, lambda: self.dog.p["arch"] > 0.9))
+        self.assertTrue(self.run_for(30, lambda: "hiss" in b.sfx))
+        self.assertTrue(self.run_for(90, lambda: b.friend is None))  # il cane se ne va
+        self.run_for(2)
+        self.assertLess(self.dog.p["arch"], 0.1)
+
+    def test_chases_a_wind_up_mouse_and_pounces(self):
+        b = self.brain
+        b.scene("mouse")
+        toy = b.toy
+        self.assertEqual(toy.kind, "mouse")
+        x0 = toy.x
+        self.run_for(1.0)
+        self.assertNotEqual(toy.x, x0)  # corre da solo
+        self.assertTrue(self.run_for(60, lambda: b.leap is not None))  # balzo
+        self.assertTrue(self.run_for(90, lambda: self.dog.carry == 5))  # alla fine lo prende in bocca
+        self.assertTrue(self.run_for(60, lambda: self.dog.carry == 0))  # e te lo porta
+        self.assertEqual((b.toy.state, b.activity), ("rest", "attend"))
+
+    def test_cat_toys_replace_stick_and_ball(self):
+        b = self.brain
+        b.scene("find")
+        self.assertEqual(b.toy.kind, "yarn")  # trova un gomitolo, non un osso o un calzino
+        b.throw("yarn", 1300, 700)
+        self.assertEqual(b.toy.kind, "yarn")
+        self.run_for(3)
+        self.assertGreater(b.toy.unwound(), 20)  # rotolando srotola il filo
+        b.throw("mouse", 1300, 700)
+        self.assertGreater(b.toy.spring, 0)  # il topolino lanciato è carico
+        self.assertTrue(self.run_for(30, lambda: b.toy.h == 0 and b.toy.state == "flying" and b.toy.spring < 5))
+
+    def test_pulls_the_yarn_thread_and_gets_tangled(self):
+        b = self.brain
+        b.throw("yarn", 1500, 950)
+        self.run_for(6)
+        toy = b.toy
+        self.assertGreater(len(toy.thread), 20)
+        for kind in ("reel", "tangle"):
+            b.rng.choice = lambda seq, k=kind: k
+            b.activity, b.count = "play", 3
+            b.start_thread_game(toy)
+            lifted = 0.0
+            for _ in range(30 * 40):
+                b.update(1 / 30)
+                lifted = max(lifted, max(n[2] for n in toy.thread))
+                if b.phase == "chase" or b.activity != "play":
+                    break
+            if kind == "reel":  # a zampate si è tirato il gomitolo fin sotto il muso
+                self.assertLess(math.dist((toy.x, toy.y), (b.x, b.y)), b.reach() * 1.6)
+            else:  # il filo gli è salito attorno alla pancia, poi si è liberato
+                self.assertGreater(lifted, self.dog.b["rc"])
+                self.assertEqual(b.activity, "groom")
+                self.assertEqual(toy.pins, {})
+        b.pick_up()
+        self.assertEqual(toy.pins, {})
+
+    def test_cat_sounds_replace_dog_sounds(self):
+        import sounds
+        with tempfile.TemporaryDirectory() as d, mock.patch("subprocess.Popen") as popen, \
+                mock.patch.object(sounds.Player, "prepare"):
+            p = sounds.Player(d, "pippi")
+            p.cmd = ["play"]
+            p.ready.add(("meow", "pippi"))
+            p.play("bark")
+            self.assertTrue(popen.call_args[0][0][-1].endswith("meow_pippi.wav"))
+
+
 class ConfigTest(unittest.TestCase):
     def test_config_roundtrip_private(self):
         import main
@@ -581,6 +725,11 @@ class ShaderTest(unittest.TestCase):
         img, w, h = render()
         opaque = sum(img.pixelColor(x, y).alpha() == 255 for x in range(0, w, 3) for y in range(0, h, 3))
         self.assertGreater(opaque, 150)
+        cat = dog3d.Dog("pippi")
+        dog, rig = cat, cat.rig()
+        img, w, h = render()
+        self.assertGreater(sum(img.pixelColor(x, y).alpha() == 255 for x in range(0, w, 3) for y in range(0, h, 3)), 100)
+        dog = dog3d.Dog("maremmano")
         # pancia all'aria girato in ogni direzione: niente di opaco sui bordi della finestra (cane tagliato)
         dog.p.update(belly=1.0)
         for deg in range(0, 360, 30):
